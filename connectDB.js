@@ -1,16 +1,13 @@
 
-const mysql = require("mysql2");
 const dotenv = require("dotenv");
+const { Pool } = require("pg");
 
 dotenv.config();
 
 const dbConfig = {
-  host: process.env.DB_HOST ,
-  user: process.env.DB_USER,
-  password: process.env.DB_PASSWORD ,
-  database: process.env.DB_DATABASE ,
+  connectionString: process.env.DB_CONNECTION_STRING,
 };
 
-const db = mysql.createConnection(dbConfig);
+const pool = new Pool(dbConfig);
 
-module.exports = db;
+module.exports = pool;
