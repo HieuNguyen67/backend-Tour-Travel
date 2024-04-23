@@ -6,7 +6,7 @@ const db = require("./connectDB");
 const jwt = require("jsonwebtoken");
 const bodyParser = require("body-parser");
 const cors = require("cors");
-const bcrypt = require("bcrypt");
+const bcrypt = require("bcryptjs");
 
 db.connect((err) => {
   if (err) {
