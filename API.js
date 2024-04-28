@@ -130,7 +130,96 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+app.get("/account/:id", async (req, res) => {
+  const accountId = req.params.id;
 
+  try {
+    const query = `
+      SELECT accounts.username, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email
+      FROM accounts
+      INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
+      WHERE accounts.account_id = $1
+    `;
+    const result = await pool.query(query, [accountId]);
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy thông tin tài khoản." });
+    }
+
+    const accountData = result.rows[0];
+    res.json(accountData);
+  } catch (error) {
+    console.error("Lỗi khi lấy thông tin tài khoản:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+
+app.put("/account/:id", async (req, res) => {
+  const accountId = req.params.id;
+  const { username, name, birth_of_date, phone_number, address, email } =
+    req.body;
+
+  try {
+    const updateQuery = `
+      UPDATE profiles
+      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, email = $5
+      FROM accounts
+      WHERE accounts.profile_id = profiles.profile_id
+        AND accounts.account_id = $6
+    `;
+    await pool.query(updateQuery, [
+      name,
+      birth_of_date,
+      phone_number,
+      address,
+      email,
+      accountId,
+    ]);
+
+    res.json({ message: "Thông tin tài khoản đã được cập nhật." });
+  } catch (error) {
+    console.error("Lỗi khi cập nhật thông tin tài khoản:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+app.put("/account/change-password/:id", async (req, res) => {
+  const accountId = req.params.id;
+  const { oldPassword, newPassword, confirmPassword } = req.body;
+
+  try {
+    const getPasswordQuery =
+      "SELECT password FROM accounts WHERE account_id = $1";
+    const getPasswordResult = await pool.query(getPasswordQuery, [accountId]);
+    const currentPasswordHash = getPasswordResult.rows[0].password;
+
+    const isPasswordMatch = await bcrypt.compare(
+      oldPassword,
+      currentPasswordHash
+    );
+    if (!isPasswordMatch) {
+      return res.status(401).json({ message: "Mật khẩu cũ không đúng." });
+    }
+
+    if (newPassword !== confirmPassword) {
+      return res
+        .status(400)
+        .json({ message: "Mật khẩu mới và nhập lại mật khẩu mới không khớp." });
+    }
+
+    const newPasswordHash = await bcrypt.hash(newPassword, 10);
+
+    const updatePasswordQuery =
+      "UPDATE accounts SET password = $1 WHERE account_id = $2";
+    await pool.query(updatePasswordQuery, [newPasswordHash, accountId]);
+
+    res.json({ message: "Mật khẩu đã được thay đổi." });
+  } catch (error) {
+    console.error("Lỗi khi thay đổi mật khẩu:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
 
 // -----------------------------------------------
 module.exports = app;
