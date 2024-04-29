@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const fs = require('fs').promises; 
 
 pool.connect((err) => {
   if (err) {
@@ -220,6 +221,63 @@ app.put("/account/change-password/:id", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
+
+app.get("/account/image/:accountId", async (req, res) => {
+  const { accountId } = req.params;
+
+  try {
+    const query = "SELECT image FROM accountsimage WHERE account_id = $1";
+    const result = await pool.query(query, [accountId]);
+
+    if (result.rows.length > 0) {
+      const imageData = result.rows[0].image;
+      res.set("Content-Type", "image/jpeg"); 
+      res.send(imageData);
+    } else {
+      res
+        .status(404)
+        .json({ message: "Không tìm thấy hình ảnh cho tài khoản này." });
+    }
+  } catch (error) {
+    console.error("Lỗi khi lấy hình ảnh:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+
+const upload = multer({ dest: "uploads/" });
+
+app.put(
+  "/account/update-image/:accountId",
+  upload.single("image"),
+  async (req, res) => {
+    const { accountId } = req.params;
+    const { path } = req.file;
+
+    try {
+      const imageData = await fs.readFile(path);
+      await fs.unlink(path);
+
+      const checkImageQuery =
+        "SELECT * FROM accountsimage WHERE account_id = $1";
+      const checkImageResult = await pool.query(checkImageQuery, [accountId]);
+
+      if (checkImageResult.rows.length > 0) {
+        const updateImageQuery =
+          "UPDATE accountsimage SET image = $1 WHERE account_id = $2";
+        await pool.query(updateImageQuery, [imageData, accountId]);
+      } else {
+        const insertImageQuery =
+          "INSERT INTO accountsimage (account_id, image) VALUES ($1, $2)";
+        await pool.query(insertImageQuery, [accountId, imageData]);
+      }
+
+      res.json({ message: "Hình ảnh đã được cập nhật." });
+    } catch (error) {
+      console.error("Lỗi khi cập nhật hình ảnh:", error);
+      res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+    }
+  }
+);
 
 // -----------------------------------------------
 module.exports = app;
