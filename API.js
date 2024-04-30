@@ -131,6 +131,61 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+app.post("/register-business", async (req, res) => {
+  const { username, password, name, birth_of_date, phone_number, address } =
+    req.body;
+
+  try {
+    const { email } = req.body;
+
+    const checkExistingQuery =
+      "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
+    const existingResult = await pool.query(checkExistingQuery, [
+      username,
+      email,
+    ]);
+    if (existingResult.rows.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
+    }
+
+    const profileQuery =
+      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+    const profileResult = await pool.query(profileQuery, [
+      name,
+      birth_of_date,
+      phone_number,
+      address,
+      email,
+    ]);
+    const profile = profileResult.rows[0];
+
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const accountQuery =
+      "INSERT INTO accounts (username, password, profile_id, role_id) VALUES ($1, $2, $3, $4) RETURNING *";
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      profile.profile_id,
+      3,
+    ]);
+    const account = accountResult.rows[0];
+
+    const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
+    const userResult = await pool.query(userQuery, [account.account_id]);
+    const user = userResult.rows[0];
+
+   
+
+    res.json({ message: "Đăng ký thành công!"});
+  } catch (error) {
+    console.error("Đăng ký không thành công:", error);
+    res
+      .status(500)
+      .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
+  }
+});
 app.get("/account/:id", async (req, res) => {
   const accountId = req.params.id;
 
@@ -278,6 +333,39 @@ app.put(
     }
   }
 );
+app.get("/get-users", async (req, res) => {
+  const { role_id } = req.query;
+
+  try {
+    const query = `
+      SELECT profiles.profile_id, accounts.username,  accounts.account_id, accounts.role_id, profiles.name, profiles.birth_of_date, 
+             profiles.phone_number, profiles.address, profiles.email
+      FROM profiles
+      INNER JOIN accounts ON profiles.profile_id = accounts.profile_id
+      WHERE accounts.role_id = $1
+    `;
+    const result = await pool.query(query, [role_id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách người dùng:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+app.delete("/delete-users/:profileId", async (req, res) => {
+  const profileId = req.params.profileId;
+
+  try {
+    await pool.query("DELETE FROM profiles WHERE profile_id = $1", [profileId]);
+
+    res.json({ message: "Người dùng đã được xoá thành công." });
+  } catch (error) {
+    console.error("Lỗi khi xoá người dùng:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+
+
 
 // -----------------------------------------------
 module.exports = app;
