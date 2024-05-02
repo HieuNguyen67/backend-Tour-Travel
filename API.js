@@ -299,19 +299,17 @@ app.get("/account/image/:accountId", async (req, res) => {
   }
 });
 
-const upload = multer({ dest: "uploads/" });
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 app.put(
   "/account/update-image/:accountId",
   upload.single("image"),
   async (req, res) => {
     const { accountId } = req.params;
-    const { path } = req.file;
+    const { buffer } = req.file; 
 
     try {
-      const imageData = await fs.readFile(path);
-      await fs.unlink(path);
-
       const checkImageQuery =
         "SELECT * FROM accountsimage WHERE account_id = $1";
       const checkImageResult = await pool.query(checkImageQuery, [accountId]);
@@ -319,11 +317,11 @@ app.put(
       if (checkImageResult.rows.length > 0) {
         const updateImageQuery =
           "UPDATE accountsimage SET image = $1 WHERE account_id = $2";
-        await pool.query(updateImageQuery, [imageData, accountId]);
+        await pool.query(updateImageQuery, [buffer, accountId]);
       } else {
         const insertImageQuery =
           "INSERT INTO accountsimage (account_id, image) VALUES ($1, $2)";
-        await pool.query(insertImageQuery, [accountId, imageData]);
+        await pool.query(insertImageQuery, [accountId, buffer]);
       }
 
       res.json({ message: "Hình ảnh đã được cập nhật." });
@@ -362,6 +360,92 @@ app.delete("/delete-users/:profileId", async (req, res) => {
   } catch (error) {
     console.error("Lỗi khi xoá người dùng:", error);
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+
+app.post("/add-newscategories", async (req, res) => {
+  const { name } = req.body;
+
+  try {
+    const query = "INSERT INTO NewsCategories (name) VALUES ($1) RETURNING *";
+    const result = await pool.query(query, [name]);
+    const newCategory = result.rows[0];
+    res.status(201).json(newCategory);
+  } catch (error) {
+    console.error("Error adding news category:", error);
+    res.status(500).json({ message: "Failed to add news category." });
+  }
+});
+app.get('/news-categories', async (req, res) => {
+  try {
+    const categories = await pool.query('SELECT * FROM NewsCategories');
+    res.json(categories.rows);
+  } catch (error) {
+    console.error('Failed to fetch news categories:', error);
+    res.status(500).json({ message: 'Failed to fetch news categories.' });
+  }
+});
+
+app.post("/add-news", upload.single("image"), async (req, res) => {
+  const { title, content, newscategory_id, account_id } = req.body;
+
+  try {
+    const newsInsertQuery = `
+      INSERT INTO News (title, content, newscategory_id, account_id, created_at, status)
+      VALUES ($1, $2, $3, $4, NOW(), 'Pending')
+      RETURNING news_id
+    `;
+    const newsInsertValues = [title, content, newscategory_id, account_id];
+    const newsInsertResult = await pool.query(
+      newsInsertQuery,
+      newsInsertValues
+    );
+
+    const newsId = newsInsertResult.rows[0].news_id;
+
+    if (req.file) {
+      const imageInsertQuery = `
+        INSERT INTO NewsImages (news_id, image)
+        VALUES ($1, $2)
+      `;
+      const imageInsertValues = [newsId, req.file.buffer];
+      await pool.query(imageInsertQuery, imageInsertValues);
+    }
+
+    res
+      .status(201)
+      .json({ message: "News posted successfully", news_id: newsId });
+  } catch (error) {
+    console.error("Error posting news:", error);
+    res
+      .status(500)
+      .json({ message: "Failed to post news. Please try again later." });
+  }
+});
+app.get("/list-news", async (req, res) => {
+  try {
+    const query = `
+      SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+      FROM news n
+      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+      LEFT JOIN profiles p ON n.account_id = p.profile_id
+      LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+    `;
+    const result = await pool.query(query);
+
+    const newsWithBase64Images = result.rows.map((row) => {
+      if (row.image) {
+        const imageBase64 = Buffer.from(row.image, "binary").toString("base64");
+        return { ...row, image: imageBase64 };
+      } else {
+        return row;
+      }
+    });
+
+    res.json(newsWithBase64Images);
+  } catch (error) {
+    console.error("Failed to fetch news:", error);
+    res.status(500).json({ message: "Failed to fetch news" });
   }
 });
 
