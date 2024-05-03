@@ -448,8 +448,80 @@ app.get("/list-news", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
+app.get("/news-detail/:newsId", async (req, res) => {
+  const { newsId } = req.params;
+  
+  try {
+    const query = `
+      SELECT 
+          n.news_id, 
+          n.title, 
+          n.content, 
+          nc.name AS newscategory_name, 
+          p.name AS profile_name, 
+          n.created_at
+      FROM 
+          news n
+      INNER JOIN 
+          newscategories nc ON n.newscategory_id = nc.newscategory_id
+      INNER JOIN 
+          profiles p ON n.account_id = p.profile_id
+      WHERE 
+          n.news_id = $1;
+    `;
+    const result = await pool.query(query, [newsId]);
+    
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Failed to fetch news:", error);
+    res.status(500).json({ message: "Failed to fetch news" });
+  }
+});
+app.delete("/delete-news/:newsId", async (req, res) => {
+  const { newsId } = req.params;
 
+  try {
+    const query = "DELETE FROM news WHERE news_id = $1"; 
+    await pool.query(query, [newsId]); 
 
+    res.status(204).send(); 
+  } catch (error) {
+    console.error("Failed to delete news:", error);
+    res.status(500).json({ message: "Failed to delete news" }); 
+  }
+});
+app.get("/select-status-note/:newsId", async (req, res) => {
+  const { newsId } = req.params;
 
+  try {
+    const query = "SELECT status, note FROM news WHERE news_id = $1";
+    const result = await pool.query(query, [newsId]);
+    const details = result.rows[0];
+    res.json(details);
+  } catch (error) {
+    console.error("Failed to fetch news details:", error);
+    res.status(500).json({ message: "Failed to fetch news details" });
+  }
+});
+app.put("/update-status/:newsId", async (req, res) => {
+  const { newsId } = req.params;
+  const { status, note } = req.body;
+
+  try {
+    const query = `
+      UPDATE news 
+      SET status = $1, note = $2 
+      WHERE news_id = $3
+    `;
+    await pool.query(query, [status, note, newsId]);
+
+    res
+      .status(200)
+      .json({ message: "News status and note updated successfully" });
+  } catch (error) {
+    console.error("Failed to update news status and note:", error);
+    res.status(500).json({ message: "Failed to update news status and note" });
+  }
+});
 // -----------------------------------------------
 module.exports = app;
