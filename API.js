@@ -494,7 +494,7 @@ app.get("/select-status-note/:newsId", async (req, res) => {
   const { newsId } = req.params;
 
   try {
-    const query = "SELECT status, note FROM news WHERE news_id = $1";
+    const query = "SELECT status, note,title,content FROM news WHERE news_id = $1";
     const result = await pool.query(query, [newsId]);
     const details = result.rows[0];
     res.json(details);
@@ -523,5 +523,48 @@ app.put("/update-status/:newsId", async (req, res) => {
     res.status(500).json({ message: "Failed to update news status and note" });
   }
 });
+app.put("/update-news/:newsId", async (req, res) => {
+  const { newsId } = req.params;
+  const { title, content } = req.body;
+
+  try {
+    const query = "UPDATE news SET title = $1, content = $2 WHERE news_id = $3";
+    await pool.query(query, [title, content, newsId]);
+
+    res.status(200).json({ message: "News updated successfully" });
+  } catch (error) {
+    console.error("Failed to update news:", error);
+    res.status(500).json({ message: "Failed to update news" });
+  }
+});
+app.get("/list-news-travel/:category", async (req, res) => {
+  try {
+    const category = req.params.category;
+    const query = `
+      SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+      FROM news n
+      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+      LEFT JOIN profiles p ON n.account_id = p.profile_id
+      LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+      WHERE n.status = 'Confirm' AND nc.name = $1
+    `;
+    const result = await pool.query(query, [category]);
+
+    const newsWithBase64Images = result.rows.map((row) => {
+      if (row.image) {
+        const imageBase64 = Buffer.from(row.image, "binary").toString("base64");
+        return { ...row, image: imageBase64 };
+      } else {
+        return row;
+      }
+    });
+
+    res.json(newsWithBase64Images);
+  } catch (error) {
+    console.error("Failed to fetch news:", error);
+    res.status(500).json({ message: "Failed to fetch news" });
+  }
+});
+
 // -----------------------------------------------
 module.exports = app;
