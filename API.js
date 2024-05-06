@@ -4,10 +4,9 @@ const multer = require("multer");
 const app = express.Router();
 const pool = require("./connectDB");
 const jwt = require("jsonwebtoken");
-const bodyParser = require("body-parser");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
-const fs = require('fs').promises; 
+const nodemailer = require("nodemailer");
 
 pool.connect((err) => {
   if (err) {
@@ -16,7 +15,6 @@ pool.connect((err) => {
     console.log("Connected to Postgres");
   }
 });
-
 app.post("/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body;
 
@@ -24,13 +22,12 @@ app.post("/login", async (req, res) => {
     const query = `
       SELECT 
         accounts.*
-        
       FROM 
         accounts 
       LEFT JOIN 
         profiles ON accounts.profile_id = profiles.profile_id
       WHERE 
-        accounts.username = $1 OR profiles.email = $1`;
+        (accounts.username = $1 OR profiles.email = $1)`;
     const result = await pool.query(query, [usernameOrEmail]);
     const account = result.rows[0];
 
@@ -44,6 +41,15 @@ app.post("/login", async (req, res) => {
       return res.status(401).json({ message: "Mật khẩu không chính xác." });
     }
 
+    if (account.status === "Inactive") {
+      return res
+        .status(401)
+        .json({
+          message:
+            "Tài khoản của bạn hiện đang bị vô hiệu hóa hoặc chưa được kích hoạt. Vui lòng liên hệ với Tour Travel.",
+        });
+    }
+
     const token = jwt.sign(
       { account_id: account.account_id, username: account.username },
       "secret_key"
@@ -51,9 +57,8 @@ app.post("/login", async (req, res) => {
     res.json({
       token,
       role: account.role_id,
-      username:account.username,
+      username: account.username,
       account_id: account.account_id,
-  
     });
   } catch (error) {
     console.error("Đăng nhập không thành công:", error);
@@ -72,14 +77,28 @@ function generateRandomCode(length) {
   }
   return result;
 }
+const transporter = nodemailer.createTransport({
+  host: "smtp.gmail.com",
+  port: 587,
+  secure: false,
+  auth: {
+    user: "hieu01211@gmail.com",
+    pass: process.env.PASS,
+  },
+});
 
 app.post("/register", async (req, res) => {
-  const { username, password, name, birth_of_date, phone_number, address } =
-    req.body;
+  const {
+    username,
+    password,
+    name,
+    birth_of_date,
+    phone_number,
+    address,
+    email,
+  } = req.body;
 
   try {
-    const { email } = req.body; 
-
     const checkExistingQuery =
       "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -92,6 +111,8 @@ app.post("/register", async (req, res) => {
         .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
     }
 
+    const passwordHash = bcrypt.hashSync(password, 10);
+
     const profileQuery =
       "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
     const profileResult = await pool.query(profileQuery, [
@@ -103,15 +124,18 @@ app.post("/register", async (req, res) => {
     ]);
     const profile = profileResult.rows[0];
 
-    const passwordHash = bcrypt.hashSync(password, 10);
     const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id) VALUES ($1, $2, $3, $4) RETURNING *";
+      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
+    const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
       passwordHash,
       profile.profile_id,
       1,
-    ]); 
+      "Inactive",
+      confirmationCode,
+    ]);
+
     const account = accountResult.rows[0];
 
     const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
@@ -123,6 +147,30 @@ app.post("/register", async (req, res) => {
       "INSERT INTO customers (user_id, referral_code) VALUES ($1, $2) RETURNING *";
     await pool.query(customerQuery, [user.user_id, referralCode]);
 
+    const confirmationLink = `http://localhost:3000/confirm`;
+
+    const mailOptions = {
+      from: "Tour Travel",
+      to: email,
+      subject: "Yêu Cầu Kích Hoạt Tài Khoản",
+      html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
+            Chúng tôi hy vọng rằng bạn đang có một ngày tốt lành. Chúng tôi xin gửi email này để nhắc nhở về việc kích hoạt tài khoản của bạn trên hệ thống của chúng tôi.<br/>
+            Tài khoản của bạn đã được tạo sẵn trên nền tảng của chúng tôi, nhưng hiện tại nó vẫn chưa được kích hoạt. Để tiếp tục trải nghiệm các tính năng và dịch vụ mà chúng tôi cung cấp, chúng tôi rất mong bạn có thể hoàn tất quá trình kích hoạt.<br/>
+            Vui lòng truy cập ${confirmationLink} và làm theo hướng dẫn để hoàn tất quá trình kích hoạt tài khoản của bạn. Nếu bạn gặp bất kỳ vấn đề hoặc cần sự trợ giúp, đừng ngần ngại liên hệ với chúng tôi thông qua email này .<br/>
+            Chúng tôi trân trọng sự hợp tác của bạn và mong nhận được phản hồi từ bạn trong thời gian sớm nhất.<br/>
+            Trân trọng,<br/>
+            Tour Travel<br/>
+            Admin`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log("Gửi email không thành công:", error);
+      } else {
+        console.log("Email xác nhận đã được gửi: " + info.response);
+      }
+    });
+
     res.json({ message: "Đăng ký thành công!", referral_code: referralCode });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
@@ -131,6 +179,30 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+app.get("/confirm/:confirmationCode", async (req, res) => {
+  const confirmationCode = req.params.confirmationCode;
+
+  try {
+    const accountQuery =
+      "UPDATE accounts SET status = 'Active' WHERE confirmation_code = $1 RETURNING *";
+    const confirmedAccount = await pool.query(accountQuery, [confirmationCode]);
+
+    if (confirmedAccount.rows.length === 0) {
+      return res.status(404).json({ message: "Mã xác nhận không hợp lệ." });
+    }
+
+    res.json({ message: "Xác nhận đăng ký thành công!" });
+  } catch (error) {
+    console.error("Xác nhận đăng ký không thành công:", error);
+    res
+      .status(500)
+      .json({
+        message: "Xác nhận đăng ký không thành công. Vui lòng thử lại sau.",
+      });
+  }
+});
+
+
 app.post("/register-business", async (req, res) => {
   const { username, password, name, birth_of_date, phone_number, address } =
     req.body;
@@ -162,14 +234,17 @@ app.post("/register-business", async (req, res) => {
     const profile = profileResult.rows[0];
 
     const passwordHash = bcrypt.hashSync(password, 10);
-    const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id) VALUES ($1, $2, $3, $4) RETURNING *";
-    const accountResult = await pool.query(accountQuery, [
-      username,
-      passwordHash,
-      profile.profile_id,
-      3,
-    ]);
+
+     const accountQuery =
+       "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+     const accountResult = await pool.query(accountQuery, [
+       username,
+       passwordHash,
+       profile.profile_id,
+       3,
+       "Active",
+     ]);
+
     const account = accountResult.rows[0];
 
     const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
@@ -191,7 +266,7 @@ app.get("/account/:id", async (req, res) => {
 
   try {
     const query = `
-      SELECT accounts.username, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email
+      SELECT accounts.username, accounts.status, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email
       FROM accounts
       INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
       WHERE accounts.account_id = $1
@@ -214,25 +289,31 @@ app.get("/account/:id", async (req, res) => {
 
 app.put("/account/:id", async (req, res) => {
   const accountId = req.params.id;
-  const { username, name, birth_of_date, phone_number, address, email } =
+  const { username, name, birth_of_date, phone_number, address,status } =
     req.body;
 
   try {
     const updateQuery = `
       UPDATE profiles
-      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, email = $5
+      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4
       FROM accounts
       WHERE accounts.profile_id = profiles.profile_id
-        AND accounts.account_id = $6
+        AND accounts.account_id = $5
     `;
     await pool.query(updateQuery, [
       name,
       birth_of_date,
       phone_number,
       address,
-      email,
       accountId,
     ]);
+
+    const updateUsernameQuery = `
+      UPDATE accounts
+      SET username = $1, status= $2
+      WHERE account_id = $3
+    `;
+    await pool.query(updateUsernameQuery, [username, status, accountId]);
 
     res.json({ message: "Thông tin tài khoản đã được cập nhật." });
   } catch (error) {
@@ -336,7 +417,7 @@ app.get("/get-users", async (req, res) => {
 
   try {
     const query = `
-      SELECT profiles.profile_id, accounts.username,  accounts.account_id, accounts.role_id, profiles.name, profiles.birth_of_date, 
+      SELECT profiles.profile_id, accounts.username,accounts.status,  accounts.account_id, accounts.role_id, profiles.name, profiles.birth_of_date, 
              profiles.phone_number, profiles.address, profiles.email
       FROM profiles
       INNER JOIN accounts ON profiles.profile_id = accounts.profile_id
