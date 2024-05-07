@@ -250,7 +250,9 @@ app.post("/register-business", async (req, res) => {
     const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
     const userResult = await pool.query(userQuery, [account.account_id]);
     const user = userResult.rows[0];
-
+const customerQuery =
+  "INSERT INTO businesses (user_id) VALUES ($1) RETURNING *";
+await pool.query(customerQuery, [user.user_id]);
    
 
     res.json({ message: "Đăng ký thành công!"});
@@ -646,6 +648,68 @@ app.get("/list-news-travel/:category", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
+app.post("/send-contact", async (req, res) => {
+  const { fullname, email, phonenumber, message, address } = req.body;
 
+  try {
+    const query = `
+      INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status)
+      VALUES ($1, $2, $3, $4, NOW(), $5, 'Pending')
+    `;
+    await pool.query(query, [fullname, email, phonenumber, message, address]);
+
+    res.status(201).json({ message: "Gửi thông tin liên hệ thành công !" });
+  } catch (error) {
+    console.error("Failed to send contact:", error);
+    res.status(500).json({ message: "Gửi thông tin liên hệ thất bại !" });
+  }
+});
+app.get("/get-contacts", async (req, res) => {
+  try {
+    const query = "SELECT * FROM contacts";
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Failed to fetch contacts:", error);
+    res.status(500).json({ message: "Failed to fetch contacts" });
+  }
+});
+app.get("/contacts-detail/:contactId", async (req, res) => {
+  const { contactId } = req.params;
+
+  try {
+    const query = "SELECT * FROM contacts WHERE contact_id = $1";
+    const result = await pool.query(query, [contactId]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Contact not found" });
+    }
+
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Failed to fetch contact:", error);
+    res.status(500).json({ message: "Failed to fetch contact" });
+  }
+});
+app.put("/update-status-contact/:contactId", async (req, res) => {
+  const { contactId } = req.params;
+  const { status } = req.body;
+
+  try {
+    const query = `
+      UPDATE contacts 
+      SET status = $1
+      WHERE contact_id = $2
+    `;
+    await pool.query(query, [status, contactId]);
+
+    res
+      .status(200)
+      .json({ message: "News status and note updated successfully" });
+  } catch (error) {
+    console.error("Failed to update news status and note:", error);
+    res.status(500).json({ message: "Failed to update news status and note" });
+  }
+});
 // -----------------------------------------------
 module.exports = app;
