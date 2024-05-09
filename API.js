@@ -138,14 +138,10 @@ app.post("/register", async (req, res) => {
 
     const account = accountResult.rows[0];
 
-    const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
-    const userResult = await pool.query(userQuery, [account.account_id]);
-    const user = userResult.rows[0];
-
     const referralCode = generateRandomCode(5);
     const customerQuery =
-      "INSERT INTO customers (user_id, referral_code) VALUES ($1, $2) RETURNING *";
-    await pool.query(customerQuery, [user.user_id, referralCode]);
+      "INSERT INTO customers (account_id, referral_code) VALUES ($1, $2) RETURNING *";
+    await pool.query(customerQuery, [account.account_id, referralCode]);
 
     const confirmationLink = `http://localhost:3000/confirm`;
 
@@ -246,13 +242,6 @@ app.post("/register-business", async (req, res) => {
      ]);
 
     const account = accountResult.rows[0];
-
-    const userQuery = "INSERT INTO users (account_id) VALUES ($1) RETURNING *";
-    const userResult = await pool.query(userQuery, [account.account_id]);
-    const user = userResult.rows[0];
-const customerQuery =
-  "INSERT INTO businesses (user_id) VALUES ($1) RETURNING *";
-await pool.query(customerQuery, [user.user_id]);
    
 
     res.json({ message: "Đăng ký thành công!"});
@@ -709,6 +698,95 @@ app.put("/update-status-contact/:contactId", async (req, res) => {
   } catch (error) {
     console.error("Failed to update news status and note:", error);
     res.status(500).json({ message: "Failed to update news status and note" });
+  }
+});
+
+app.post("/add-hotels/:account_id", async (req, res) => {
+  const account_id = req.params.account_id;
+  const { name, star, address, contact_info } = req.body;
+
+  try {
+    const newHotel = await pool.query(
+      "INSERT INTO hotels (name, star, address, contact_info, account_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
+      [name, star, address, contact_info, account_id]
+    );
+
+    res.json(newHotel.rows[0]);
+  } catch (err) {
+    console.error("Error adding hotel:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+app.get("/list-hotels/:account_id", async (req, res) => {
+  const { account_id } = req.params;
+
+  try {
+    const hotels = await pool.query(
+      "SELECT hotel_id, name, star, address, contact_info FROM hotels WHERE account_id = $1",
+      [account_id]
+    );
+
+    res.json(hotels.rows);
+  } catch (err) {
+    console.error("Error fetching hotels:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+app.delete("/delete-hotel/:hotelsId", async (req, res) => {
+  const { hotelsId } = req.params;
+
+  try {
+    const query = "DELETE FROM hotels WHERE hotel_id = $1";
+    await pool.query(query, [hotelsId]);
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Failed to delete news:", error);
+    res.status(500).json({ message: "Failed to delete news" });
+  }
+});
+app.post("/add-vehicles/:account_id", async (req, res) => {
+  const account_id = req.params.account_id;
+  const { type, description } = req.body;
+
+  try {
+    const newVehicle = await pool.query(
+      "INSERT INTO vehicles (type, description, account_id) VALUES ($1, $2, $3) RETURNING *",
+      [type, description, account_id]
+    );
+
+    res.json(newVehicle.rows[0]);
+  } catch (err) {
+    console.error("Error adding hotel:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+app.get("/list-vehicles/:account_id", async (req, res) => {
+  const { account_id } = req.params;
+
+  try {
+    const vehicles = await pool.query(
+      "SELECT vehicle_id, type, description FROM vehicles WHERE account_id = $1",
+      [account_id]
+    );
+
+    res.json(vehicles.rows);
+  } catch (err) {
+    console.error("Error fetching vehicles:", err.message);
+    res.status(500).send("Server Error");
+  }
+});
+app.delete("/delete-vehicle/:vehiclesId", async (req, res) => {
+  const { vehiclesId } = req.params;
+
+  try {
+    const query = "DELETE FROM vehicles WHERE vehicle_id = $1";
+    await pool.query(query, [vehiclesId]);
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Failed to delete news:", error);
+    res.status(500).json({ message: "Failed to delete news" });
   }
 });
 // -----------------------------------------------
