@@ -15,6 +15,10 @@ pool.connect((err) => {
     console.log("Connected to Postgres");
   }
 });
+
+
+
+
 app.post("/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body;
 
@@ -52,7 +56,7 @@ app.post("/login", async (req, res) => {
 
     const token = jwt.sign(
       { account_id: account.account_id, username: account.username },
-      "secret_key"
+      "your_secret_key"
     );
     res.json({
       token,
@@ -67,7 +71,17 @@ app.post("/login", async (req, res) => {
       .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });
   }
 });
+function authenticateToken(req, res, next) {
+  const authHeader = req.headers["authorization"];
+  const token = authHeader && authHeader.split(" ")[1];
+  if (token == null) return res.sendStatus(401); 
 
+  jwt.verify(token, "your_secret_key", (err, user) => {
+    if (err) return res.sendStatus(403);
+    req.user = user;
+    next(); 
+  });
+}
 function generateRandomCode(length) {
   let result = "";
   const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -252,6 +266,62 @@ app.post("/register-business", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+app.post("/register-guides/:accountId", async (req, res) => {
+  const { username, password, name, birth_of_date, phone_number, address } =
+    req.body;
+  const { accountId } = req.params;
+
+  try {
+    const { email } = req.body;
+
+    const checkExistingQuery =
+      "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
+    const existingResult = await pool.query(checkExistingQuery, [
+      username,
+      email,
+    ]);
+    if (existingResult.rows.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
+    }
+
+    const profileQuery =
+      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+    const profileResult = await pool.query(profileQuery, [
+      name,
+      birth_of_date,
+      phone_number,
+      address,
+      email,
+    ]);
+    const profile = profileResult.rows[0];
+
+    const passwordHash = bcrypt.hashSync(password, 10);
+
+    const accountQuery =
+      "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      profile.profile_id,
+      4,
+      "Active",
+    ]);
+
+    const account = accountResult.rows[0];
+    const customerQuery =
+      "INSERT INTO guides (account_id, account_business_id) VALUES ($1, $2) RETURNING *";
+    await pool.query(customerQuery, [account.account_id, accountId]);
+
+    res.json({ message: "Đăng ký thành công!" });
+  } catch (error) {
+    console.error("Đăng ký không thành công:", error);
+    res
+      .status(500)
+      .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
+  }
+});
 app.get("/account/:id", async (req, res) => {
   const accountId = req.params.id;
 
@@ -422,6 +492,29 @@ app.get("/get-users", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
+app.get("/get-guides-by-business", async (req, res) => {
+  const { account_business_id } = req.query;
+
+  try {
+    const query = `
+      SELECT guides.guide_id, guides.account_id, guides.account_business_id,
+             accounts.username, accounts.status,accounts.role_id,
+             profiles.name, profiles.profile_id, profiles.birth_of_date, profiles.phone_number,
+             profiles.address, profiles.email
+      FROM guides
+      INNER JOIN accounts ON guides.account_id = accounts.account_id
+      INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
+      WHERE guides.account_business_id = $1
+    `;
+    const result = await pool.query(query, [account_business_id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách hướng dẫn viên:", error);
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+
 app.delete("/delete-users/:profileId", async (req, res) => {
   const profileId = req.params.profileId;
 
@@ -448,7 +541,7 @@ app.post("/add-newscategories", async (req, res) => {
     res.status(500).json({ message: "Failed to add news category." });
   }
 });
-app.get('/news-categories', async (req, res) => {
+app.get('/news-categories',authenticateToken, async (req, res) => {
   try {
     const categories = await pool.query('SELECT * FROM NewsCategories');
     res.json(categories.rows);
@@ -732,6 +825,40 @@ app.get("/list-hotels/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+app.get("/select-hotel/:hotelsId", async (req, res) => {
+  const { hotelsId } = req.params;
+
+  try {
+    const query =
+      "SELECT name, star, address, contact_info FROM hotels WHERE hotel_id = $1";
+    const result = await pool.query(query, [hotelsId]);
+    const details = result.rows[0];
+    res.json(details);
+  } catch (error) {
+    console.error("Failed to fetch hotel details:", error);
+    res.status(500).json({ message: "Failed to fetch hotel details" });
+  }
+});
+app.put("/update-hotel/:hotelsId", async (req, res) => {
+  const { hotelsId } = req.params;
+  const { name, star, address, contact_info } = req.body;
+
+  try {
+    const query = `
+      UPDATE hotels 
+      SET name = $1, star= $2, address= $3, contact_info= $4
+      WHERE hotel_id = $5
+    `;
+    await pool.query(query, [name, star, address, contact_info, hotelsId]);
+
+    res
+      .status(200)
+      .json({ message: "Hotels updated successfully" });
+  } catch (error) {
+    console.error("Failed to hotels:", error);
+    res.status(500).json({ message: "Failed to update hotels" });
+  }
+});
 app.delete("/delete-hotel/:hotelsId", async (req, res) => {
   const { hotelsId } = req.params;
 
@@ -776,6 +903,38 @@ app.get("/list-vehicles/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
+app.get("/select-vehicle/:vehiclesId", async (req, res) => {
+  const { vehiclesId } = req.params;
+
+  try {
+    const query =
+      "SELECT type, description FROM vehicles WHERE vehicle_id = $1";
+    const result = await pool.query(query, [vehiclesId]);
+    const details = result.rows[0];
+    res.json(details);
+  } catch (error) {
+    console.error("Failed to fetch vehicle details:", error);
+    res.status(500).json({ message: "Failed to fetch vehicle details" });
+  }
+});
+app.put("/update-vehicle/:vehiclesId", async (req, res) => {
+  const { vehiclesId } = req.params;
+  const { type, description } = req.body;
+
+  try {
+    const query = `
+      UPDATE vehicles 
+      SET type = $1, description= $2
+      WHERE vehicle_id = $3
+    `;
+    await pool.query(query, [type, description, vehiclesId]);
+
+    res.status(200).json({ message: "Vehicles updated successfully" });
+  } catch (error) {
+    console.error("Failed to vehicles:", error);
+    res.status(500).json({ message: "Failed to update vehicles" });
+  }
+});
 app.delete("/delete-vehicle/:vehiclesId", async (req, res) => {
   const { vehiclesId } = req.params;
 
@@ -789,5 +948,6 @@ app.delete("/delete-vehicle/:vehiclesId", async (req, res) => {
     res.status(500).json({ message: "Failed to delete news" });
   }
 });
+
 // -----------------------------------------------
 module.exports = app;
