@@ -213,7 +213,7 @@ app.get("/confirm/:confirmationCode", async (req, res) => {
 });
 
 
-app.post("/register-business", async (req, res) => {
+app.post("/register-business", authenticateToken, async (req, res) => {
   const { username, password, name, birth_of_date, phone_number, address } =
     req.body;
 
@@ -245,20 +245,19 @@ app.post("/register-business", async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
 
-     const accountQuery =
-       "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-     const accountResult = await pool.query(accountQuery, [
-       username,
-       passwordHash,
-       profile.profile_id,
-       3,
-       "Active",
-     ]);
+    const accountQuery =
+      "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      profile.profile_id,
+      3,
+      "Active",
+    ]);
 
     const account = accountResult.rows[0];
-   
 
-    res.json({ message: "Đăng ký thành công!"});
+    res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
     res
@@ -266,7 +265,7 @@ app.post("/register-business", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
-app.post("/register-guides/:accountId", async (req, res) => {
+app.post("/register-guides/:accountId", authenticateToken, async (req, res) => {
   const { username, password, name, birth_of_date, phone_number, address } =
     req.body;
   const { accountId } = req.params;
@@ -322,7 +321,7 @@ app.post("/register-guides/:accountId", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
-app.get("/account/:id", async (req, res) => {
+app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
 
   try {
@@ -348,9 +347,9 @@ app.get("/account/:id", async (req, res) => {
   }
 });
 
-app.put("/account/:id", async (req, res) => {
+app.put("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
-  const { username, name, birth_of_date, phone_number, address,status } =
+  const { username, name, birth_of_date, phone_number, address, status } =
     req.body;
 
   try {
@@ -382,7 +381,7 @@ app.put("/account/:id", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
-app.put("/account/change-password/:id", async (req, res) => {
+app.put("/account/change-password/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
   const { oldPassword, newPassword, confirmPassword } = req.body;
 
@@ -428,7 +427,7 @@ app.get("/account/image/:accountId", async (req, res) => {
 
     if (result.rows.length > 0) {
       const imageData = result.rows[0].image;
-      res.set("Content-Type", "image/jpeg"); 
+      res.set("Content-Type", "image/jpeg");
       res.send(imageData);
     } else {
       res
@@ -446,10 +445,11 @@ const upload = multer({ storage: storage });
 
 app.put(
   "/account/update-image/:accountId",
+  authenticateToken,
   upload.single("image"),
   async (req, res) => {
     const { accountId } = req.params;
-    const { buffer } = req.file; 
+    const { buffer } = req.file;
 
     try {
       const checkImageQuery =
@@ -492,7 +492,7 @@ app.get("/get-users", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
-app.get("/get-guides-by-business", async (req, res) => {
+app.get("/get-guides-by-business", authenticateToken, async (req, res) => {
   const { account_business_id } = req.query;
 
   try {
@@ -515,7 +515,7 @@ app.get("/get-guides-by-business", async (req, res) => {
   }
 });
 
-app.delete("/delete-users/:profileId", async (req, res) => {
+app.delete("/delete-users/:profileId", authenticateToken, async (req, res) => {
   const profileId = req.params.profileId;
 
   try {
@@ -528,7 +528,7 @@ app.delete("/delete-users/:profileId", async (req, res) => {
   }
 });
 
-app.post("/add-newscategories", async (req, res) => {
+app.post("/add-newscategories", authenticateToken, async (req, res) => {
   const { name } = req.body;
 
   try {
@@ -551,52 +551,72 @@ app.get('/news-categories',authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/add-news", upload.single("image"), async (req, res) => {
-  const { title, content, newscategory_id, account_id } = req.body;
+app.post(
+  "/add-news",
+  authenticateToken,
+  upload.single("image"),
+  async (req, res) => {
+    const { title, content, newscategory_id, account_id } = req.body;
 
-  try {
-    const newsInsertQuery = `
+    try {
+      const newsInsertQuery = `
       INSERT INTO News (title, content, newscategory_id, account_id, created_at, status)
       VALUES ($1, $2, $3, $4, NOW(), 'Pending')
       RETURNING news_id
     `;
-    const newsInsertValues = [title, content, newscategory_id, account_id];
-    const newsInsertResult = await pool.query(
-      newsInsertQuery,
-      newsInsertValues
-    );
+      const newsInsertValues = [title, content, newscategory_id, account_id];
+      const newsInsertResult = await pool.query(
+        newsInsertQuery,
+        newsInsertValues
+      );
 
-    const newsId = newsInsertResult.rows[0].news_id;
+      const newsId = newsInsertResult.rows[0].news_id;
 
-    if (req.file) {
-      const imageInsertQuery = `
+      if (req.file) {
+        const imageInsertQuery = `
         INSERT INTO NewsImages (news_id, image)
         VALUES ($1, $2)
       `;
-      const imageInsertValues = [newsId, req.file.buffer];
-      await pool.query(imageInsertQuery, imageInsertValues);
+        const imageInsertValues = [newsId, req.file.buffer];
+        await pool.query(imageInsertQuery, imageInsertValues);
+      }
+
+      res
+        .status(201)
+        .json({ message: "News posted successfully", news_id: newsId });
+    } catch (error) {
+      console.error("Error posting news:", error);
+      res
+        .status(500)
+        .json({ message: "Failed to post news. Please try again later." });
+    }
+  }
+);
+app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
+  try {
+    let query;
+    const accountId = req.params.account_id;
+
+    if (accountId) {
+      query = `
+        SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+        FROM news n
+        LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+        LEFT JOIN profiles p ON n.account_id = p.profile_id
+        LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+        WHERE n.account_id = $1
+      `;
+    } else {
+      query = `
+        SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+        FROM news n
+        LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+        LEFT JOIN profiles p ON n.account_id = p.profile_id
+        LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+      `;
     }
 
-    res
-      .status(201)
-      .json({ message: "News posted successfully", news_id: newsId });
-  } catch (error) {
-    console.error("Error posting news:", error);
-    res
-      .status(500)
-      .json({ message: "Failed to post news. Please try again later." });
-  }
-});
-app.get("/list-news", async (req, res) => {
-  try {
-    const query = `
-      SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
-      FROM news n
-      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-      LEFT JOIN profiles p ON n.account_id = p.profile_id
-      LEFT JOIN newsimages ni ON n.news_id = ni.news_id
-    `;
-    const result = await pool.query(query);
+    const result = await pool.query(query, accountId ? [accountId] : []);
 
     const newsWithBase64Images = result.rows.map((row) => {
       if (row.image) {
@@ -642,24 +662,25 @@ app.get("/news-detail/:newsId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
-app.delete("/delete-news/:newsId", async (req, res) => {
+app.delete("/delete-news/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
 
   try {
-    const query = "DELETE FROM news WHERE news_id = $1"; 
-    await pool.query(query, [newsId]); 
+    const query = "DELETE FROM news WHERE news_id = $1";
+    await pool.query(query, [newsId]);
 
-    res.status(204).send(); 
+    res.status(204).send();
   } catch (error) {
     console.error("Failed to delete news:", error);
-    res.status(500).json({ message: "Failed to delete news" }); 
+    res.status(500).json({ message: "Failed to delete news" });
   }
 });
-app.get("/select-status-note/:newsId", async (req, res) => {
+app.get("/select-status-note/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
 
   try {
-    const query = "SELECT status, note,title,content FROM news WHERE news_id = $1";
+    const query =
+      "SELECT status, note,title,content FROM news WHERE news_id = $1";
     const result = await pool.query(query, [newsId]);
     const details = result.rows[0];
     res.json(details);
@@ -668,7 +689,7 @@ app.get("/select-status-note/:newsId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news details" });
   }
 });
-app.put("/update-status/:newsId", async (req, res) => {
+app.put("/update-status/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
   const { status, note } = req.body;
 
@@ -688,7 +709,7 @@ app.put("/update-status/:newsId", async (req, res) => {
     res.status(500).json({ message: "Failed to update news status and note" });
   }
 });
-app.put("/update-news/:newsId", async (req, res) => {
+app.put("/update-news/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
   const { title, content } = req.body;
 
@@ -746,7 +767,7 @@ app.post("/send-contact", async (req, res) => {
     res.status(500).json({ message: "Gửi thông tin liên hệ thất bại !" });
   }
 });
-app.get("/get-contacts", async (req, res) => {
+app.get("/get-contacts", authenticateToken, async (req, res) => {
   try {
     const query = "SELECT * FROM contacts";
     const result = await pool.query(query);
@@ -756,7 +777,7 @@ app.get("/get-contacts", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contacts" });
   }
 });
-app.get("/contacts-detail/:contactId", async (req, res) => {
+app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
   const { contactId } = req.params;
 
   try {
@@ -773,28 +794,34 @@ app.get("/contacts-detail/:contactId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contact" });
   }
 });
-app.put("/update-status-contact/:contactId", async (req, res) => {
-  const { contactId } = req.params;
-  const { status } = req.body;
+app.put(
+  "/update-status-contact/:contactId",
+  authenticateToken,
+  async (req, res) => {
+    const { contactId } = req.params;
+    const { status } = req.body;
 
-  try {
-    const query = `
+    try {
+      const query = `
       UPDATE contacts 
       SET status = $1
       WHERE contact_id = $2
     `;
-    await pool.query(query, [status, contactId]);
+      await pool.query(query, [status, contactId]);
 
-    res
-      .status(200)
-      .json({ message: "News status and note updated successfully" });
-  } catch (error) {
-    console.error("Failed to update news status and note:", error);
-    res.status(500).json({ message: "Failed to update news status and note" });
+      res
+        .status(200)
+        .json({ message: "News status and note updated successfully" });
+    } catch (error) {
+      console.error("Failed to update news status and note:", error);
+      res
+        .status(500)
+        .json({ message: "Failed to update news status and note" });
+    }
   }
-});
+);
 
-app.post("/add-hotels/:account_id", async (req, res) => {
+app.post("/add-hotels/:account_id", authenticateToken, async (req, res) => {
   const account_id = req.params.account_id;
   const { name, star, address, contact_info } = req.body;
 
@@ -810,7 +837,7 @@ app.post("/add-hotels/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/list-hotels/:account_id", async (req, res) => {
+app.get("/list-hotels/:account_id", authenticateToken, async (req, res) => {
   const { account_id } = req.params;
 
   try {
@@ -825,7 +852,7 @@ app.get("/list-hotels/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/select-hotel/:hotelsId", async (req, res) => {
+app.get("/select-hotel/:hotelsId", authenticateToken, async (req, res) => {
   const { hotelsId } = req.params;
 
   try {
@@ -839,7 +866,7 @@ app.get("/select-hotel/:hotelsId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch hotel details" });
   }
 });
-app.put("/update-hotel/:hotelsId", async (req, res) => {
+app.put("/update-hotel/:hotelsId", authenticateToken, async (req, res) => {
   const { hotelsId } = req.params;
   const { name, star, address, contact_info } = req.body;
 
@@ -851,15 +878,13 @@ app.put("/update-hotel/:hotelsId", async (req, res) => {
     `;
     await pool.query(query, [name, star, address, contact_info, hotelsId]);
 
-    res
-      .status(200)
-      .json({ message: "Hotels updated successfully" });
+    res.status(200).json({ message: "Hotels updated successfully" });
   } catch (error) {
     console.error("Failed to hotels:", error);
     res.status(500).json({ message: "Failed to update hotels" });
   }
 });
-app.delete("/delete-hotel/:hotelsId", async (req, res) => {
+app.delete("/delete-hotel/:hotelsId", authenticateToken, async (req, res) => {
   const { hotelsId } = req.params;
 
   try {
@@ -872,7 +897,7 @@ app.delete("/delete-hotel/:hotelsId", async (req, res) => {
     res.status(500).json({ message: "Failed to delete news" });
   }
 });
-app.post("/add-vehicles/:account_id", async (req, res) => {
+app.post("/add-vehicles/:account_id", authenticateToken, async (req, res) => {
   const account_id = req.params.account_id;
   const { type, description } = req.body;
 
@@ -888,7 +913,7 @@ app.post("/add-vehicles/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/list-vehicles/:account_id", async (req, res) => {
+app.get("/list-vehicles/:account_id", authenticateToken, async (req, res) => {
   const { account_id } = req.params;
 
   try {
@@ -903,7 +928,7 @@ app.get("/list-vehicles/:account_id", async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/select-vehicle/:vehiclesId", async (req, res) => {
+app.get("/select-vehicle/:vehiclesId", authenticateToken, async (req, res) => {
   const { vehiclesId } = req.params;
 
   try {
@@ -917,7 +942,7 @@ app.get("/select-vehicle/:vehiclesId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch vehicle details" });
   }
 });
-app.put("/update-vehicle/:vehiclesId", async (req, res) => {
+app.put("/update-vehicle/:vehiclesId", authenticateToken, async (req, res) => {
   const { vehiclesId } = req.params;
   const { type, description } = req.body;
 
@@ -935,19 +960,23 @@ app.put("/update-vehicle/:vehiclesId", async (req, res) => {
     res.status(500).json({ message: "Failed to update vehicles" });
   }
 });
-app.delete("/delete-vehicle/:vehiclesId", async (req, res) => {
-  const { vehiclesId } = req.params;
+app.delete(
+  "/delete-vehicle/:vehiclesId",
+  authenticateToken,
+  async (req, res) => {
+    const { vehiclesId } = req.params;
 
-  try {
-    const query = "DELETE FROM vehicles WHERE vehicle_id = $1";
-    await pool.query(query, [vehiclesId]);
+    try {
+      const query = "DELETE FROM vehicles WHERE vehicle_id = $1";
+      await pool.query(query, [vehiclesId]);
 
-    res.status(204).send();
-  } catch (error) {
-    console.error("Failed to delete news:", error);
-    res.status(500).json({ message: "Failed to delete news" });
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete news:", error);
+      res.status(500).json({ message: "Failed to delete news" });
+    }
   }
-});
+);
 
 // -----------------------------------------------
 module.exports = app;
