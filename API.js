@@ -71,6 +71,7 @@ app.post("/login", async (req, res) => {
       .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });
   }
 });
+//-----------------------------------------------
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
@@ -189,6 +190,7 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+//-----------------------------------------------
 app.get("/confirm/:confirmationCode", async (req, res) => {
   const confirmationCode = req.params.confirmationCode;
 
@@ -212,7 +214,7 @@ app.get("/confirm/:confirmationCode", async (req, res) => {
   }
 });
 
-
+//-----------------------------------------------
 app.post("/register-business", authenticateToken, async (req, res) => {
   const { username, password, name, birth_of_date, phone_number, address } =
     req.body;
