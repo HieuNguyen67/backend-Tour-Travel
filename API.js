@@ -574,6 +574,8 @@ app.post(
 
       const newsId = newsInsertResult.rows[0].news_id;
 
+      let imageInserted = false;
+
       if (req.file) {
         const imageInsertQuery = `
         INSERT INTO NewsImages (news_id, image)
@@ -581,11 +583,16 @@ app.post(
       `;
         const imageInsertValues = [newsId, req.file.buffer];
         await pool.query(imageInsertQuery, imageInsertValues);
+        imageInserted = true; 
       }
 
-      res
-        .status(201)
-        .json({ message: "News posted successfully", news_id: newsId });
+      if (imageInserted) {
+        res
+          .status(201)
+          .json({ message: "News posted successfully", news_id: newsId });
+      } else {
+        res.status(400).json({ message: "Please upload an image file" });
+      }
     } catch (error) {
       console.error("Error posting news:", error);
       res
@@ -594,6 +601,7 @@ app.post(
     }
   }
 );
+
 app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
   try {
     let query;
@@ -716,7 +724,8 @@ app.put("/update-news/:newsId", authenticateToken, async (req, res) => {
   const { title, content } = req.body;
 
   try {
-    const query = "UPDATE news SET title = $1, content = $2 WHERE news_id = $3";
+    const query =
+      "UPDATE news SET title = $1, content = $2, status = 'Pending' WHERE news_id = $3";
     await pool.query(query, [title, content, newsId]);
 
     res.status(200).json({ message: "News updated successfully" });
@@ -725,6 +734,7 @@ app.put("/update-news/:newsId", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to update news" });
   }
 });
+
 app.get("/list-news-travel/:category", async (req, res) => {
   try {
     const category = req.params.category;
@@ -813,12 +823,12 @@ app.put(
 
       res
         .status(200)
-        .json({ message: "News status and note updated successfully" });
+        .json({ message: "News status updated successfully" });
     } catch (error) {
-      console.error("Failed to update news status and note:", error);
+      console.error("Failed to update news status:", error);
       res
         .status(500)
-        .json({ message: "Failed to update news status and note" });
+        .json({ message: "Failed to update news status " });
     }
   }
 );
@@ -854,7 +864,7 @@ app.get("/list-hotels/:account_id", authenticateToken, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/select-hotel/:hotelsId", authenticateToken, async (req, res) => {
+app.get("/select-hotel/:hotelsId", async (req, res) => {
   const { hotelsId } = req.params;
 
   try {
@@ -930,7 +940,7 @@ app.get("/list-vehicles/:account_id", authenticateToken, async (req, res) => {
     res.status(500).send("Server Error");
   }
 });
-app.get("/select-vehicle/:vehiclesId", authenticateToken, async (req, res) => {
+app.get("/select-vehicle/:vehiclesId", async (req, res) => {
   const { vehiclesId } = req.params;
 
   try {
@@ -979,6 +989,67 @@ app.delete(
     }
   }
 );
+
+app.post("/add-tours/:account_id", async (req, res) => {
+  try {
+    const account_id = req.params.account_id; 
+    const {
+      name,
+      description,
+      adult_price,
+      child_price,
+      infant_price,
+      start_date,
+      end_date,
+      quantity,
+      vehicle_id,
+      tourcategory_id,
+      departure_location_name,
+      destination_locations,
+    } = req.body;
+
+    const newTour = await pool.query(
+      `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle_id, tourcategory_id, account_id, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending', $9, $10, $11, NOW())
+            RETURNING tour_id`,
+      [
+        name,
+        description,
+        adult_price,
+        child_price,
+        infant_price,
+        start_date,
+        end_date,
+        quantity,
+        vehicle_id,
+        tourcategory_id,
+        account_id,
+      ]
+    );
+
+    const tour_id = newTour.rows[0].tour_id;
+
+    await pool.query(
+      `INSERT INTO departurelocation (departure_location_name, tour_id)
+            VALUES ($1, $2)`,
+      [departure_location_name, tour_id]
+    );
+
+    for (let i = 0; i < destination_locations.length; i++) {
+      await pool.query(
+        `INSERT INTO destinationlocation (destination_location_name, tour_id)
+              VALUES ($1, $2)`,
+        [destination_locations[i], tour_id]
+      );
+    }
+
+    res.status(201).json({ message: "Tour added successfully!", tour_id });
+  } catch (error) {
+    console.error("Error adding tour: ", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 
 // -----------------------------------------------
 module.exports = app;
