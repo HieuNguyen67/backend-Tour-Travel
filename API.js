@@ -835,12 +835,12 @@ app.put(
 
 app.post("/add-hotels/:account_id", authenticateToken, async (req, res) => {
   const account_id = req.params.account_id;
-  const { name, star, address, contact_info } = req.body;
+  const { name, star, address, contact_info,tour_id } = req.body;
 
   try {
     const newHotel = await pool.query(
-      "INSERT INTO hotels (name, star, address, contact_info, account_id) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-      [name, star, address, contact_info, account_id]
+      "INSERT INTO hotels (name, star, address, contact_info,tour_id, account_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
+      [name, star, address, contact_info,tour_id, account_id]
     );
 
     res.json(newHotel.rows[0]);
@@ -853,23 +853,31 @@ app.get("/list-hotels/:account_id", authenticateToken, async (req, res) => {
   const { account_id } = req.params;
 
   try {
-    const hotels = await pool.query(
-      "SELECT hotel_id, name, star, address, contact_info FROM hotels WHERE account_id = $1",
-      [account_id]
-    );
+    const query = `
+      SELECT h.hotel_id, h.name, h.star, h.address, h.contact_info, t.name AS tour_name
+      FROM hotels h
+      LEFT JOIN tours t ON h.tour_id = t.tour_id
+      WHERE h.account_id = $1
+    `;
+    const result = await pool.query(query, [account_id]);
 
-    res.json(hotels.rows);
+    res.json(result.rows);
   } catch (err) {
     console.error("Error fetching hotels:", err.message);
     res.status(500).send("Server Error");
   }
 });
+
 app.get("/select-hotel/:hotelsId", async (req, res) => {
   const { hotelsId } = req.params;
 
   try {
-    const query =
-      "SELECT name, star, address, contact_info FROM hotels WHERE hotel_id = $1";
+    const query = `
+      SELECT h.name , h.tour_id, h.star, h.address, h.contact_info, t.name AS tour_name
+      FROM hotels h
+      LEFT JOIN tours t ON h.tour_id = t.tour_id
+      WHERE h.hotel_id = $1
+    `;
     const result = await pool.query(query, [hotelsId]);
     const details = result.rows[0];
     res.json(details);
@@ -878,17 +886,18 @@ app.get("/select-hotel/:hotelsId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch hotel details" });
   }
 });
+
 app.put("/update-hotel/:hotelsId", authenticateToken, async (req, res) => {
   const { hotelsId } = req.params;
-  const { name, star, address, contact_info } = req.body;
+  const { name, star, address, contact_info, tour_id } = req.body;
 
   try {
     const query = `
       UPDATE hotels 
-      SET name = $1, star= $2, address= $3, contact_info= $4
-      WHERE hotel_id = $5
+      SET name = $1, star= $2, address= $3, contact_info= $4, tour_id= $5
+      WHERE hotel_id = $6
     `;
-    await pool.query(query, [name, star, address, contact_info, hotelsId]);
+    await pool.query(query, [name, star, address, contact_info,tour_id, hotelsId]);
 
     res.status(200).json({ message: "Hotels updated successfully" });
   } catch (error) {
@@ -990,9 +999,9 @@ app.delete(
   }
 );
 
-app.post("/add-tours/:account_id", async (req, res) => {
+app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
   try {
-    const account_id = req.params.account_id; 
+    const account_id = req.params.account_id;
     const {
       name,
       description,
@@ -1007,6 +1016,10 @@ app.post("/add-tours/:account_id", async (req, res) => {
       departure_location_name,
       destination_locations,
     } = req.body;
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "At least one image is required." });
+    }
 
     const newTour = await pool.query(
       `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle_id, tourcategory_id, account_id, created_at)
@@ -1043,9 +1056,44 @@ app.post("/add-tours/:account_id", async (req, res) => {
       );
     }
 
-    res.status(201).json({ message: "Tour added successfully!", tour_id });
+    const images = req.files;
+    for (let i = 0; i < images.length; i++) {
+      const image = images[i].buffer;
+      await pool.query(
+        `INSERT INTO tourimages (tour_id, image)
+              VALUES ($1, $2)`,
+        [tour_id, image]
+      );
+    }
+
+    res
+      .status(201)
+      .json({ message: "Tour and images added successfully!", tour_id });
   } catch (error) {
     console.error("Error adding tour: ", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.get("/tourcategories", async (req, res) => {
+  try {
+    const queryText = "SELECT tourcategory_id, name FROM tourcategories";
+    const { rows } = await pool.query(queryText);
+    res.status(200).json(rows);
+  } catch (error) {
+    console.error("Error getting tour categories:", error);
+    res.status(500).json({ message: "Lỗi máy chủ" });
+  }
+});
+app.get("/select-option-tours/:account_id", async (req, res) => {
+  try {
+    const { account_id } = req.params;
+    const tours = await pool.query(
+      "SELECT tour_id, name FROM tours WHERE account_id = $1",
+      [account_id]
+    );
+    res.json(tours.rows);
+  } catch (error) {
+    console.error("Error fetching tours: ", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
