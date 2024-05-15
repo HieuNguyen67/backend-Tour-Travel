@@ -140,7 +140,7 @@ app.post("/register", async (req, res) => {
     const profile = profileResult.rows[0];
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
+      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code, use_confirmation_code) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -149,6 +149,7 @@ app.post("/register", async (req, res) => {
       1,
       "Inactive",
       confirmationCode,
+      "unused",
     ]);
 
     const account = accountResult.rows[0];
@@ -195,33 +196,50 @@ app.get("/confirm/:confirmationCode", async (req, res) => {
   const confirmationCode = req.params.confirmationCode;
 
   try {
-    const accountQuery =
-      "UPDATE accounts SET status = 'Active' WHERE confirmation_code = $1 RETURNING *";
-    const confirmedAccount = await pool.query(accountQuery, [confirmationCode]);
+    const checkQuery = "SELECT * FROM accounts WHERE confirmation_code = $1";
+    const checkResult = await pool.query(checkQuery, [confirmationCode]);
 
-    if (confirmedAccount.rows.length === 0) {
+    if (checkResult.rows.length === 0) {
       return res.status(404).json({ message: "Mã xác nhận không hợp lệ." });
     }
+
+    const account = checkResult.rows[0];
+
+    if (account.use_confirmation_code === "used") {
+      return res.status(400).json({ message: "Mã xác nhận đã được sử dụng." });
+    }
+
+    const updateQuery = `
+      UPDATE accounts 
+      SET status = 'Active', use_confirmation_code = 'used' 
+      WHERE confirmation_code = $1 
+      RETURNING *
+    `;
+    const updateResult = await pool.query(updateQuery, [confirmationCode]);
 
     res.json({ message: "Xác nhận đăng ký thành công!" });
   } catch (error) {
     console.error("Xác nhận đăng ký không thành công:", error);
-    res
-      .status(500)
-      .json({
-        message: "Xác nhận đăng ký không thành công. Vui lòng thử lại sau.",
-      });
+    res.status(500).json({
+      message: "Xác nhận đăng ký không thành công. Vui lòng thử lại sau.",
+    });
   }
 });
 
+
 //-----------------------------------------------
-app.post("/register-business", authenticateToken, async (req, res) => {
-  const { username, password, name, birth_of_date, phone_number, address } =
-    req.body;
+app.post("/register-business",authenticateToken, async (req, res) => {
+  const {
+    username,
+    password,
+    name,
+    birth_of_date,
+    phone_number,
+    address,
+    email,
+  } = req.body;
 
   try {
-    const { email } = req.body;
-
     const checkExistingQuery =
       "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -234,6 +252,8 @@ app.post("/register-business", authenticateToken, async (req, res) => {
         .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
     }
 
+    const passwordHash = bcrypt.hashSync(password, 10);
+
     const profileQuery =
       "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
     const profileResult = await pool.query(profileQuery, [
@@ -245,21 +265,45 @@ app.post("/register-business", authenticateToken, async (req, res) => {
     ]);
     const profile = profileResult.rows[0];
 
-    const passwordHash = bcrypt.hashSync(password, 10);
-
     const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code, use_confirmation_code) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *";
+    const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
       passwordHash,
       profile.profile_id,
       3,
-      "Active",
+      "Inactive",
+      confirmationCode,
+      "unused",
     ]);
 
     const account = accountResult.rows[0];
 
-    res.json({ message: "Đăng ký thành công!" });
+    const confirmationLink = `http://localhost:3000/confirm`;
+
+    const mailOptions = {
+      from: "Tour Travel",
+      to: email,
+      subject: "Yêu Cầu Kích Hoạt Tài Khoản",
+      html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
+            Chúng tôi hy vọng rằng bạn đang có một ngày tốt lành. Chúng tôi xin gửi email này để nhắc nhở về việc kích hoạt tài khoản của bạn trên hệ thống của chúng tôi.<br/>
+            Tài khoản của bạn đã được tạo sẵn trên nền tảng của chúng tôi, nhưng hiện tại nó vẫn chưa được kích hoạt. Để tiếp tục trải nghiệm các tính năng và dịch vụ mà chúng tôi cung cấp, chúng tôi rất mong bạn có thể hoàn tất quá trình kích hoạt.<br/>
+            Vui lòng truy cập ${confirmationLink} và làm theo hướng dẫn để hoàn tất quá trình kích hoạt tài khoản của bạn. Nếu bạn gặp bất kỳ vấn đề hoặc cần sự trợ giúp, đừng ngần ngại liên hệ với chúng tôi thông qua email này .<br/>
+            Chúng tôi trân trọng sự hợp tác của bạn và mong nhận được phản hồi từ bạn trong thời gian sớm nhất.<br/>
+            Trân trọng,<br/>
+            Tour Travel<br/>
+            Admin`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log("Gửi email không thành công:", error);
+      } else {
+        console.log("Email xác nhận đã được gửi: " + info.response);
+      }
+    });
+        res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
     res
@@ -267,6 +311,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+
 app.post("/register-guides/:accountId", authenticateToken, async (req, res) => {
   const { username, password, name, birth_of_date, phone_number, address } =
     req.body;
@@ -833,171 +878,9 @@ app.put(
   }
 );
 
-app.post("/add-hotels/:account_id", authenticateToken, async (req, res) => {
-  const account_id = req.params.account_id;
-  const { name, star, address, contact_info,tour_id } = req.body;
 
-  try {
-    const newHotel = await pool.query(
-      "INSERT INTO hotels (name, star, address, contact_info,tour_id, account_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *",
-      [name, star, address, contact_info,tour_id, account_id]
-    );
 
-    res.json(newHotel.rows[0]);
-  } catch (err) {
-    console.error("Error adding hotel:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-app.get("/list-hotels/:account_id", authenticateToken, async (req, res) => {
-  const { account_id } = req.params;
 
-  try {
-    const query = `
-      SELECT h.hotel_id, h.name, h.star, h.address, h.contact_info, t.name AS tour_name
-      FROM hotels h
-      LEFT JOIN tours t ON h.tour_id = t.tour_id
-      WHERE h.account_id = $1
-    `;
-    const result = await pool.query(query, [account_id]);
-
-    res.json(result.rows);
-  } catch (err) {
-    console.error("Error fetching hotels:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-
-app.get("/select-hotel/:hotelsId", async (req, res) => {
-  const { hotelsId } = req.params;
-
-  try {
-    const query = `
-      SELECT h.name , h.tour_id, h.star, h.address, h.contact_info, t.name AS tour_name
-      FROM hotels h
-      LEFT JOIN tours t ON h.tour_id = t.tour_id
-      WHERE h.hotel_id = $1
-    `;
-    const result = await pool.query(query, [hotelsId]);
-    const details = result.rows[0];
-    res.json(details);
-  } catch (error) {
-    console.error("Failed to fetch hotel details:", error);
-    res.status(500).json({ message: "Failed to fetch hotel details" });
-  }
-});
-
-app.put("/update-hotel/:hotelsId", authenticateToken, async (req, res) => {
-  const { hotelsId } = req.params;
-  const { name, star, address, contact_info, tour_id } = req.body;
-
-  try {
-    const query = `
-      UPDATE hotels 
-      SET name = $1, star= $2, address= $3, contact_info= $4, tour_id= $5
-      WHERE hotel_id = $6
-    `;
-    await pool.query(query, [name, star, address, contact_info,tour_id, hotelsId]);
-
-    res.status(200).json({ message: "Hotels updated successfully" });
-  } catch (error) {
-    console.error("Failed to hotels:", error);
-    res.status(500).json({ message: "Failed to update hotels" });
-  }
-});
-app.delete("/delete-hotel/:hotelsId", authenticateToken, async (req, res) => {
-  const { hotelsId } = req.params;
-
-  try {
-    const query = "DELETE FROM hotels WHERE hotel_id = $1";
-    await pool.query(query, [hotelsId]);
-
-    res.status(204).send();
-  } catch (error) {
-    console.error("Failed to delete news:", error);
-    res.status(500).json({ message: "Failed to delete news" });
-  }
-});
-app.post("/add-vehicles/:account_id", authenticateToken, async (req, res) => {
-  const account_id = req.params.account_id;
-  const { type, description } = req.body;
-
-  try {
-    const newVehicle = await pool.query(
-      "INSERT INTO vehicles (type, description, account_id) VALUES ($1, $2, $3) RETURNING *",
-      [type, description, account_id]
-    );
-
-    res.json(newVehicle.rows[0]);
-  } catch (err) {
-    console.error("Error adding hotel:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-app.get("/list-vehicles/:account_id", authenticateToken, async (req, res) => {
-  const { account_id } = req.params;
-
-  try {
-    const vehicles = await pool.query(
-      "SELECT vehicle_id, type, description FROM vehicles WHERE account_id = $1",
-      [account_id]
-    );
-
-    res.json(vehicles.rows);
-  } catch (err) {
-    console.error("Error fetching vehicles:", err.message);
-    res.status(500).send("Server Error");
-  }
-});
-app.get("/select-vehicle/:vehiclesId", async (req, res) => {
-  const { vehiclesId } = req.params;
-
-  try {
-    const query =
-      "SELECT type, description FROM vehicles WHERE vehicle_id = $1";
-    const result = await pool.query(query, [vehiclesId]);
-    const details = result.rows[0];
-    res.json(details);
-  } catch (error) {
-    console.error("Failed to fetch vehicle details:", error);
-    res.status(500).json({ message: "Failed to fetch vehicle details" });
-  }
-});
-app.put("/update-vehicle/:vehiclesId", authenticateToken, async (req, res) => {
-  const { vehiclesId } = req.params;
-  const { type, description } = req.body;
-
-  try {
-    const query = `
-      UPDATE vehicles 
-      SET type = $1, description= $2
-      WHERE vehicle_id = $3
-    `;
-    await pool.query(query, [type, description, vehiclesId]);
-
-    res.status(200).json({ message: "Vehicles updated successfully" });
-  } catch (error) {
-    console.error("Failed to vehicles:", error);
-    res.status(500).json({ message: "Failed to update vehicles" });
-  }
-});
-app.delete(
-  "/delete-vehicle/:vehiclesId",
-  authenticateToken,
-  async (req, res) => {
-    const { vehiclesId } = req.params;
-
-    try {
-      const query = "DELETE FROM vehicles WHERE vehicle_id = $1";
-      await pool.query(query, [vehiclesId]);
-
-      res.status(204).send();
-    } catch (error) {
-      console.error("Failed to delete news:", error);
-      res.status(500).json({ message: "Failed to delete news" });
-    }
-  }
-);
 
 app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
   try {
@@ -1011,7 +894,8 @@ app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
       start_date,
       end_date,
       quantity,
-      vehicle_id,
+      vehicle,
+      hotel,
       tourcategory_id,
       departure_location_name,
       destination_locations,
@@ -1022,8 +906,8 @@ app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
     }
 
     const newTour = await pool.query(
-      `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle_id, tourcategory_id, account_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Pending', $9, $10, $11, NOW())
+      `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, account_id, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, NOW())
             RETURNING tour_id`,
       [
         name,
@@ -1034,7 +918,8 @@ app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
         start_date,
         end_date,
         quantity,
-        vehicle_id,
+        vehicle,
+        hotel,
         tourcategory_id,
         account_id,
       ]
