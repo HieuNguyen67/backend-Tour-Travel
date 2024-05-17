@@ -17,8 +17,6 @@ pool.connect((err) => {
 });
 
 
-
-
 app.post("/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body;
 
@@ -539,6 +537,38 @@ app.get("/get-users", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
+
+app.get('/accounts-with-role-3', async (req, res) => {
+  const query = `
+    SELECT
+      a.account_id,
+      p.name,
+      ai.image
+    FROM
+      accounts a
+    JOIN
+      profiles p ON a.profile_id = p.profile_id
+    LEFT JOIN
+      accountsimage ai ON a.account_id = ai.account_id
+    WHERE
+      a.role_id = 3
+  `;
+
+  try {
+    const result = await pool.query(query);
+
+    const accounts = result.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString('base64') : null,
+    }));
+
+    res.json(accounts);
+  } catch (error) {
+    console.error('Error executing query', error.stack);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 app.get("/get-guides-by-business", authenticateToken, async (req, res) => {
   const { account_business_id } = req.query;
 
@@ -878,10 +908,6 @@ app.put(
   }
 );
 
-
-
-
-
 app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
   try {
     const account_id = req.params.account_id;
@@ -982,6 +1008,236 @@ app.get("/select-option-tours/:account_id", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+app.get("/list-tours/:account_id", async (req, res) => {
+  const { account_id } = req.params;
+
+  const query = `
+    SELECT
+      t.tour_id,
+      t.name AS tour_name,
+      t.description,
+      t.adult_price,
+      t.child_price,
+      t.infant_price,
+      t.start_date,
+      t.end_date,
+      t.quantity,
+      t.status,
+      t.created_at,
+      t.vehicle,
+      t.hotel,
+      dl.departure_location_name,
+      tc.name AS tourcategory_name,
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
+      array_agg(dsl.destination_location_name) AS destination_locations
+    FROM
+      tours t
+    LEFT JOIN
+      departurelocation dl ON t.tour_id = dl.tour_id
+    LEFT JOIN
+      destinationlocation dsl ON t.tour_id = dsl.tour_id
+    LEFT JOIN
+      tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
+    WHERE
+      t.account_id = $1
+    GROUP BY
+      t.tour_id, dl.departure_location_name, tc.name
+  `;
+
+  try {
+    const result = await pool.query(query, [account_id]);
+
+    const tours = result.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString("base64") : null, 
+    }));
+
+    res.json(tours);
+  } catch (error) {
+    console.error("Error executing query", error.stack);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+app.get("/get-tour/:tourId", async (req, res) => {
+  try {
+    const tourId = req.params.tourId;
+
+    const tourQuery = await pool.query(
+      `SELECT t.*, dl.departure_location_name, array_agg(dst.destination_location_name) as destination_locations
+      FROM tours t
+      LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+      LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
+      WHERE t.tour_id = $1
+      GROUP BY t.tour_id, dl.departure_location_name`,
+      [tourId]
+    );
+
+    if (tourQuery.rows.length === 0) {
+      return res.status(404).json({ error: "Tour not found" });
+    }
+
+    const tour = tourQuery.rows[0];
+
+    res.status(200).json(tour);
+  } catch (error) {
+    console.error("Error fetching tour:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+
+app.put("/update-tour/:tour_id", upload.array("images"), async (req, res) => {
+  try {
+    const tour_id = req.params.tour_id;
+    const {
+      name,
+      description,
+      adult_price,
+      child_price,
+      infant_price,
+      start_date,
+      end_date,
+      quantity,
+      vehicle,
+      hotel,
+      tourcategory_id,
+      departure_location_name,
+      destination_locations,
+    } = req.body;
+
+    const existingTour = await pool.query(
+      `SELECT * FROM tours WHERE tour_id = $1`,
+      [tour_id]
+    );
+
+    if (existingTour.rows.length === 0) {
+      return res.status(404).json({ error: "Tour not found" });
+    }
+
+    await pool.query(
+      `UPDATE tours
+        SET name = $1,
+            description = $2,
+            adult_price = $3,
+            child_price = $4,
+            infant_price = $5,
+            start_date = $6,
+            end_date = $7,
+            quantity = $8,
+            vehicle = $9,
+            hotel = $10,
+            tourcategory_id = $11,
+            created_at = NOW(),
+            status= 'Active'
+        WHERE tour_id = $12`,
+      [
+        name,
+        description,
+        adult_price,
+        child_price,
+        infant_price,
+        start_date,
+        end_date,
+        quantity,
+        vehicle,
+        hotel,
+        tourcategory_id,
+        tour_id,
+      ]
+    );
+
+    await pool.query(
+      `UPDATE departurelocation
+        SET departure_location_name = $1
+        WHERE tour_id = $2`,
+      [departure_location_name, tour_id]
+    );
+
+    await pool.query(`DELETE FROM destinationlocation WHERE tour_id = $1`, [
+      tour_id,
+    ]);
+
+    for (let i = 0; i < destination_locations.length; i++) {
+      await pool.query(
+        `INSERT INTO destinationlocation (destination_location_name, tour_id)
+              VALUES ($1, $2)`,
+        [destination_locations[i], tour_id]
+      );
+    }   
+
+    res.status(200).json({ message: "Tour updated successfully!" });
+  } catch (error) {
+    console.error("Error updating tour: ", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/get-all-tour-images/:tourId", async (req, res) => {
+  try {
+    const tourId = req.params.tourId;
+    const imageQuery = await pool.query(
+      `SELECT image FROM tourimages WHERE tour_id = $1`,
+      [tourId]
+    );
+
+    if (imageQuery.rows.length === 0) {
+      return res.status(404).json({ error: "Images not found for this tour" });
+    }
+
+    const imagesBase64 = [];
+
+    for (let i = 0; i < imageQuery.rows.length; i++) {
+      const imageData = imageQuery.rows[i].image;
+      const base64Image = Buffer.from(imageData, "binary").toString("base64");
+      imagesBase64.push({ tour_id: tourId, image: base64Image });
+    }
+
+    res.status(200).json(imagesBase64);
+  } catch (error) {
+    console.error("Error fetching tour images:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.put(
+  "/update-tour-images/:tour_id",
+  upload.array("images"),
+  async (req, res) => {
+    try {
+      const tour_id = req.params.tour_id;
+
+      const existingTour = await pool.query(
+        `SELECT * FROM tours WHERE tour_id = $1`,
+        [tour_id]
+      );
+
+      if (existingTour.rows.length === 0) {
+        return res.status(404).json({ error: "Tour not found" });
+      }
+
+      if (req.files && req.files.length > 0) {
+        await pool.query(`DELETE FROM tourimages WHERE tour_id = $1`, [
+          tour_id,
+        ]);
+
+        const images = req.files;
+        for (let i = 0; i < images.length; i++) {
+          const image = images[i].buffer;
+          await pool.query(
+            `INSERT INTO tourimages (tour_id, image)
+              VALUES ($1, $2)`,
+            [tour_id, image]
+          );
+        }
+      }
+
+      res.status(200).json({ message: "Tour images updated successfully!" });
+    } catch (error) {
+      console.error("Error updating tour images: ", error.message);
+      res.status(500).json({ error: "Server error" });
+    }
+  }
+);
 
 
 // -----------------------------------------------
