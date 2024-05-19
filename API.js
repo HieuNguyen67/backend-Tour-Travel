@@ -908,34 +908,14 @@ app.put(
   }
 );
 
-app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
-  try {
-    const account_id = req.params.account_id;
-    const {
-      name,
-      description,
-      adult_price,
-      child_price,
-      infant_price,
-      start_date,
-      end_date,
-      quantity,
-      vehicle,
-      hotel,
-      tourcategory_id,
-      departure_location_name,
-      destination_locations,
-    } = req.body;
-
-    if (!req.files || req.files.length === 0) {
-      return res.status(400).json({ error: "At least one image is required." });
-    }
-
-    const newTour = await pool.query(
-      `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, account_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, NOW())
-            RETURNING tour_id`,
-      [
+app.post(
+  "/add-tours/:account_id",
+  authenticateToken,
+  upload.array("images"),
+  async (req, res) => {
+    try {
+      const account_id = req.params.account_id;
+      const {
         name,
         description,
         adult_price,
@@ -947,44 +927,71 @@ app.post("/add-tours/:account_id", upload.array("images"), async (req, res) => {
         vehicle,
         hotel,
         tourcategory_id,
-        account_id,
-      ]
-    );
+        departure_location_name,
+        destination_locations,
+      } = req.body;
 
-    const tour_id = newTour.rows[0].tour_id;
+      if (!req.files || req.files.length === 0) {
+        return res
+          .status(400)
+          .json({ error: "At least one image is required." });
+      }
 
-    await pool.query(
-      `INSERT INTO departurelocation (departure_location_name, tour_id)
+      const newTour = await pool.query(
+        `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, account_id, created_at)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, NOW())
+            RETURNING tour_id`,
+        [
+          name,
+          description,
+          adult_price,
+          child_price,
+          infant_price,
+          start_date,
+          end_date,
+          quantity,
+          vehicle,
+          hotel,
+          tourcategory_id,
+          account_id,
+        ]
+      );
+
+      const tour_id = newTour.rows[0].tour_id;
+
+      await pool.query(
+        `INSERT INTO departurelocation (departure_location_name, tour_id)
             VALUES ($1, $2)`,
-      [departure_location_name, tour_id]
-    );
-
-    for (let i = 0; i < destination_locations.length; i++) {
-      await pool.query(
-        `INSERT INTO destinationlocation (destination_location_name, tour_id)
-              VALUES ($1, $2)`,
-        [destination_locations[i], tour_id]
+        [departure_location_name, tour_id]
       );
-    }
 
-    const images = req.files;
-    for (let i = 0; i < images.length; i++) {
-      const image = images[i].buffer;
-      await pool.query(
-        `INSERT INTO tourimages (tour_id, image)
+      for (let i = 0; i < destination_locations.length; i++) {
+        await pool.query(
+          `INSERT INTO destinationlocation (destination_location_name, tour_id)
               VALUES ($1, $2)`,
-        [tour_id, image]
-      );
-    }
+          [destination_locations[i], tour_id]
+        );
+      }
 
-    res
-      .status(201)
-      .json({ message: "Tour and images added successfully!", tour_id });
-  } catch (error) {
-    console.error("Error adding tour: ", error.message);
-    res.status(500).json({ error: "Server error" });
+      const images = req.files;
+      for (let i = 0; i < images.length; i++) {
+        const image = images[i].buffer;
+        await pool.query(
+          `INSERT INTO tourimages (tour_id, image)
+              VALUES ($1, $2)`,
+          [tour_id, image]
+        );
+      }
+
+      res
+        .status(201)
+        .json({ message: "Tour and images added successfully!", tour_id });
+    } catch (error) {
+      console.error("Error adding tour: ", error.message);
+      res.status(500).json({ error: "Server error" });
+    }
   }
-});
+);
 app.get("/tourcategories", async (req, res) => {
   try {
     const queryText = "SELECT tourcategory_id, name FROM tourcategories";
@@ -995,19 +1002,7 @@ app.get("/tourcategories", async (req, res) => {
     res.status(500).json({ message: "Lỗi máy chủ" });
   }
 });
-app.get("/select-option-tours/:account_id", async (req, res) => {
-  try {
-    const { account_id } = req.params;
-    const tours = await pool.query(
-      "SELECT tour_id, name FROM tours WHERE account_id = $1",
-      [account_id]
-    );
-    res.json(tours.rows);
-  } catch (error) {
-    console.error("Error fetching tours: ", error.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
+
 
 app.get("/list-tours/:account_id", async (req, res) => {
   const { account_id } = req.params;
@@ -1059,6 +1054,122 @@ app.get("/list-tours/:account_id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+app.get("/list-tours-filter", async (req, res) => {
+  const {
+    departure_location_name,
+    destination_location_name,
+    tourcategory_name,
+    name,
+    min_adult_price,
+    max_adult_price,
+    hotel,
+    vehicle,
+    created_at,
+  } = req.query;
+  if (!tourcategory_name) {
+    return res.status(400).json({ error: "tourcategory_name is required" });
+  }
+
+  let query = `
+    SELECT
+      t.tour_id,
+      t.name AS tour_name,
+      t.description,
+      t.adult_price,
+      t.child_price,
+      t.infant_price,
+      t.start_date,
+      t.end_date,
+      t.quantity,
+      t.status,
+      t.created_at,
+      t.vehicle,
+      t.hotel,
+      dl.departure_location_name,
+      tc.name AS tourcategory_name,
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
+      array_agg(dsl.destination_location_name) AS destination_locations
+    FROM
+      tours t
+    LEFT JOIN
+      departurelocation dl ON t.tour_id = dl.tour_id
+    LEFT JOIN
+      destinationlocation dsl ON t.tour_id = dsl.tour_id
+    LEFT JOIN
+      tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
+    WHERE
+      t.status = 'Active' AND tc.name = $1
+  `;
+
+  const params = [tourcategory_name];
+
+  if (departure_location_name) {
+    query += ` AND dl.departure_location_name = $${params.length + 1}`;
+    params.push(departure_location_name);
+  }
+
+  if (destination_location_name) {
+    query += ` AND dsl.destination_location_name = $${params.length + 1}`;
+    params.push(destination_location_name);
+  }
+
+ if (name) {
+   query += ` AND unaccent(LOWER(t.name)) LIKE unaccent(LOWER($${
+     params.length + 1
+   }))`;
+   params.push(`%${name}%`);
+ }
+
+ if (min_adult_price && max_adult_price) {
+    query += ` AND t.adult_price BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+    params.push(min_adult_price);
+    params.push(max_adult_price);
+} else if (min_adult_price) {
+    query += ` AND t.adult_price >= $${params.length + 1}`;
+    params.push(min_adult_price);
+} else if (max_adult_price) {
+    query += ` AND t.adult_price <= $${params.length + 1}`;
+    params.push(max_adult_price);
+}
+
+  if (hotel) {
+    query += ` AND t.hotel = $${params.length + 1}`;
+    params.push(hotel);
+  }
+  if (vehicle) {
+    query += ` AND t.vehicle = $${params.length + 1}`;
+    params.push(vehicle);
+  }
+
+ if (created_at) {
+   query += ` AND t.created_at >= $${params.length + 1}`;
+   params.push(created_at);
+ }
+
+  query += `
+    GROUP BY
+      t.tour_id, dl.departure_location_name, tc.name
+  `;
+
+  try {
+    const result = await pool.query(query, params);
+
+    const tours = result.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString("base64") : null,
+    }));
+
+    res.json(tours);
+  } catch (error) {
+    console.error("Error executing query", error.stack);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+
+
+
 app.get("/get-tour/:tourId", async (req, res) => {
   try {
     const tourId = req.params.tourId;
@@ -1087,36 +1198,40 @@ app.get("/get-tour/:tourId", async (req, res) => {
 });
 
 
-app.put("/update-tour/:tour_id", upload.array("images"), async (req, res) => {
-  try {
-    const tour_id = req.params.tour_id;
-    const {
-      name,
-      description,
-      adult_price,
-      child_price,
-      infant_price,
-      start_date,
-      end_date,
-      quantity,
-      vehicle,
-      hotel,
-      tourcategory_id,
-      departure_location_name,
-      destination_locations,
-    } = req.body;
+app.put(
+  "/update-tour/:tour_id",
+  authenticateToken,
+  upload.array("images"),
+  async (req, res) => {
+    try {
+      const tour_id = req.params.tour_id;
+      const {
+        name,
+        description,
+        adult_price,
+        child_price,
+        infant_price,
+        start_date,
+        end_date,
+        quantity,
+        vehicle,
+        hotel,
+        tourcategory_id,
+        departure_location_name,
+        destination_locations,
+      } = req.body;
 
-    const existingTour = await pool.query(
-      `SELECT * FROM tours WHERE tour_id = $1`,
-      [tour_id]
-    );
+      const existingTour = await pool.query(
+        `SELECT * FROM tours WHERE tour_id = $1`,
+        [tour_id]
+      );
 
-    if (existingTour.rows.length === 0) {
-      return res.status(404).json({ error: "Tour not found" });
-    }
+      if (existingTour.rows.length === 0) {
+        return res.status(404).json({ error: "Tour not found" });
+      }
 
-    await pool.query(
-      `UPDATE tours
+      await pool.query(
+        `UPDATE tours
         SET name = $1,
             description = $2,
             adult_price = $3,
@@ -1131,47 +1246,48 @@ app.put("/update-tour/:tour_id", upload.array("images"), async (req, res) => {
             created_at = NOW(),
             status= 'Active'
         WHERE tour_id = $12`,
-      [
-        name,
-        description,
-        adult_price,
-        child_price,
-        infant_price,
-        start_date,
-        end_date,
-        quantity,
-        vehicle,
-        hotel,
-        tourcategory_id,
-        tour_id,
-      ]
-    );
+        [
+          name,
+          description,
+          adult_price,
+          child_price,
+          infant_price,
+          start_date,
+          end_date,
+          quantity,
+          vehicle,
+          hotel,
+          tourcategory_id,
+          tour_id,
+        ]
+      );
 
-    await pool.query(
-      `UPDATE departurelocation
+      await pool.query(
+        `UPDATE departurelocation
         SET departure_location_name = $1
         WHERE tour_id = $2`,
-      [departure_location_name, tour_id]
-    );
-
-    await pool.query(`DELETE FROM destinationlocation WHERE tour_id = $1`, [
-      tour_id,
-    ]);
-
-    for (let i = 0; i < destination_locations.length; i++) {
-      await pool.query(
-        `INSERT INTO destinationlocation (destination_location_name, tour_id)
-              VALUES ($1, $2)`,
-        [destination_locations[i], tour_id]
+        [departure_location_name, tour_id]
       );
-    }   
 
-    res.status(200).json({ message: "Tour updated successfully!" });
-  } catch (error) {
-    console.error("Error updating tour: ", error.message);
-    res.status(500).json({ error: "Server error" });
+      await pool.query(`DELETE FROM destinationlocation WHERE tour_id = $1`, [
+        tour_id,
+      ]);
+
+      for (let i = 0; i < destination_locations.length; i++) {
+        await pool.query(
+          `INSERT INTO destinationlocation (destination_location_name, tour_id)
+              VALUES ($1, $2)`,
+          [destination_locations[i], tour_id]
+        );
+      }
+
+      res.status(200).json({ message: "Tour updated successfully!" });
+    } catch (error) {
+      console.error("Error updating tour: ", error.message);
+      res.status(500).json({ error: "Server error" });
+    }
   }
-});
+);
 
 app.get("/get-all-tour-images/:tourId", async (req, res) => {
   try {
@@ -1201,6 +1317,7 @@ app.get("/get-all-tour-images/:tourId", async (req, res) => {
 });
 app.put(
   "/update-tour-images/:tour_id",
+  authenticateToken,
   upload.array("images"),
   async (req, res) => {
     try {
