@@ -7,6 +7,7 @@ const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
+const cron = require("node-cron");
 
 pool.connect((err) => {
   if (err) {
@@ -15,7 +16,6 @@ pool.connect((err) => {
     console.log("Connected to Postgres");
   }
 });
-
 
 app.post("/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body;
@@ -44,12 +44,10 @@ app.post("/login", async (req, res) => {
     }
 
     if (account.status === "Inactive") {
-      return res
-        .status(401)
-        .json({
-          message:
-            "Tài khoản của bạn hiện đang bị vô hiệu hóa hoặc chưa được kích hoạt. Vui lòng liên hệ với Tour Travel.",
-        });
+      return res.status(401).json({
+        message:
+          "Tài khoản của bạn hiện đang bị vô hiệu hóa hoặc chưa được kích hoạt. Vui lòng liên hệ với Tour Travel.",
+      });
     }
 
     const token = jwt.sign(
@@ -73,12 +71,12 @@ app.post("/login", async (req, res) => {
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
   const token = authHeader && authHeader.split(" ")[1];
-  if (token == null) return res.sendStatus(401); 
+  if (token == null) return res.sendStatus(401);
 
   jwt.verify(token, "your_secret_key", (err, user) => {
     if (err) return res.sendStatus(403);
     req.user = user;
-    next(); 
+    next();
   });
 }
 function generateRandomCode(length) {
@@ -109,6 +107,7 @@ app.post("/register", async (req, res) => {
     phone_number,
     address,
     email,
+    id_card,
   } = req.body;
 
   try {
@@ -127,13 +126,14 @@ app.post("/register", async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const profileQuery =
-      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
     const profileResult = await pool.query(profileQuery, [
       name,
       birth_of_date,
       phone_number,
       address,
       email,
+      id_card,
     ]);
     const profile = profileResult.rows[0];
 
@@ -224,9 +224,8 @@ app.get("/confirm/:confirmationCode", async (req, res) => {
   }
 });
 
-
 //-----------------------------------------------
-app.post("/register-business",authenticateToken, async (req, res) => {
+app.post("/register-business", authenticateToken, async (req, res) => {
   const {
     username,
     password,
@@ -235,6 +234,7 @@ app.post("/register-business",authenticateToken, async (req, res) => {
     phone_number,
     address,
     email,
+    id_card,
   } = req.body;
 
   try {
@@ -253,13 +253,14 @@ app.post("/register-business",authenticateToken, async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const profileQuery =
-      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
+      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
     const profileResult = await pool.query(profileQuery, [
       name,
       birth_of_date,
       phone_number,
       address,
       email,
+      id_card,
     ]);
     const profile = profileResult.rows[0];
 
@@ -301,7 +302,7 @@ app.post("/register-business",authenticateToken, async (req, res) => {
         console.log("Email xác nhận đã được gửi: " + info.response);
       }
     });
-        res.json({ message: "Đăng ký thành công!" });
+    res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
     res
@@ -371,7 +372,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
 
   try {
     const query = `
-      SELECT accounts.username, accounts.status, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email
+      SELECT accounts.username, accounts.status, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email, profiles.id_card, profiles.bank_account_name, profiles.bank_account_number 
       FROM accounts
       INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
       WHERE accounts.account_id = $1
@@ -394,22 +395,34 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
 
 app.put("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
-  const { username, name, birth_of_date, phone_number, address, status } =
-    req.body;
+  const {
+    username,
+    name,
+    birth_of_date,
+    phone_number,
+    address,
+    status,
+    id_card,
+    bank_account_name,
+    bank_account_number,
+  } = req.body;
 
   try {
     const updateQuery = `
       UPDATE profiles
-      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4
+      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7
       FROM accounts
       WHERE accounts.profile_id = profiles.profile_id
-        AND accounts.account_id = $5
+        AND accounts.account_id = $8
     `;
     await pool.query(updateQuery, [
       name,
       birth_of_date,
       phone_number,
       address,
+      id_card,
+      bank_account_name,
+      bank_account_number,
       accountId,
     ]);
 
@@ -538,7 +551,7 @@ app.get("/get-users", async (req, res) => {
   }
 });
 
-app.get('/accounts-with-role-3', async (req, res) => {
+app.get("/accounts-with-role-3", async (req, res) => {
   const query = `
     SELECT
       a.account_id,
@@ -559,13 +572,13 @@ app.get('/accounts-with-role-3', async (req, res) => {
 
     const accounts = result.rows.map((row) => ({
       ...row,
-      image: row.image ? row.image.toString('base64') : null,
+      image: row.image ? row.image.toString("base64") : null,
     }));
 
     res.json(accounts);
   } catch (error) {
-    console.error('Error executing query', error.stack);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error("Error executing query", error.stack);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
@@ -618,13 +631,13 @@ app.post("/add-newscategories", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to add news category." });
   }
 });
-app.get('/news-categories',authenticateToken, async (req, res) => {
+app.get("/news-categories", authenticateToken, async (req, res) => {
   try {
-    const categories = await pool.query('SELECT * FROM NewsCategories');
+    const categories = await pool.query("SELECT * FROM NewsCategories");
     res.json(categories.rows);
   } catch (error) {
-    console.error('Failed to fetch news categories:', error);
-    res.status(500).json({ message: 'Failed to fetch news categories.' });
+    console.error("Failed to fetch news categories:", error);
+    res.status(500).json({ message: "Failed to fetch news categories." });
   }
 });
 
@@ -658,7 +671,7 @@ app.post(
       `;
         const imageInsertValues = [newsId, req.file.buffer];
         await pool.query(imageInsertQuery, imageInsertValues);
-        imageInserted = true; 
+        imageInserted = true;
       }
 
       if (imageInserted) {
@@ -720,7 +733,7 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
 });
 app.get("/news-detail/:newsId", async (req, res) => {
   const { newsId } = req.params;
-  
+
   try {
     const query = `
       SELECT 
@@ -740,7 +753,7 @@ app.get("/news-detail/:newsId", async (req, res) => {
           n.news_id = $1;
     `;
     const result = await pool.query(query, [newsId]);
-    
+
     res.json(result.rows);
   } catch (error) {
     console.error("Failed to fetch news:", error);
@@ -896,14 +909,10 @@ app.put(
     `;
       await pool.query(query, [status, contactId]);
 
-      res
-        .status(200)
-        .json({ message: "News status updated successfully" });
+      res.status(200).json({ message: "News status updated successfully" });
     } catch (error) {
       console.error("Failed to update news status:", error);
-      res
-        .status(500)
-        .json({ message: "Failed to update news status " });
+      res.status(500).json({ message: "Failed to update news status " });
     }
   }
 );
@@ -1003,7 +1012,6 @@ app.get("/tourcategories", async (req, res) => {
   }
 });
 
-
 app.get("/list-tours/:account_id", async (req, res) => {
   const { account_id } = req.params;
 
@@ -1045,7 +1053,7 @@ app.get("/list-tours/:account_id", async (req, res) => {
 
     const tours = result.rows.map((row) => ({
       ...row,
-      image: row.image ? row.image.toString("base64") : null, 
+      image: row.image ? row.image.toString("base64") : null,
     }));
 
     res.json(tours);
@@ -1098,8 +1106,10 @@ app.get("/list-tours-filter", async (req, res) => {
       destinationlocation dsl ON t.tour_id = dsl.tour_id
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
+    LEFT JOIN
+      accounts a ON t.account_id = a.account_id
     WHERE
-      t.status = 'Active' AND tc.name = $1
+      t.status = 'Active' AND tc.name = $1 AND a.status = 'Active'
   `;
 
   const params = [tourcategory_name];
@@ -1114,24 +1124,26 @@ app.get("/list-tours-filter", async (req, res) => {
     params.push(destination_location_name);
   }
 
- if (name) {
-   query += ` AND unaccent(LOWER(t.name)) LIKE unaccent(LOWER($${
-     params.length + 1
-   }))`;
-   params.push(`%${name}%`);
- }
+  if (name) {
+    query += ` AND unaccent(LOWER(t.name)) LIKE unaccent(LOWER($${
+      params.length + 1
+    }))`;
+    params.push(`%${name}%`);
+  }
 
- if (min_adult_price && max_adult_price) {
-    query += ` AND t.adult_price BETWEEN $${params.length + 1} AND $${params.length + 2}`;
+  if (min_adult_price && max_adult_price) {
+    query += ` AND t.adult_price BETWEEN $${params.length + 1} AND $${
+      params.length + 2
+    }`;
     params.push(min_adult_price);
     params.push(max_adult_price);
-} else if (min_adult_price) {
+  } else if (min_adult_price) {
     query += ` AND t.adult_price >= $${params.length + 1}`;
     params.push(min_adult_price);
-} else if (max_adult_price) {
+  } else if (max_adult_price) {
     query += ` AND t.adult_price <= $${params.length + 1}`;
     params.push(max_adult_price);
-}
+  }
 
   if (hotel) {
     query += ` AND t.hotel = $${params.length + 1}`;
@@ -1142,10 +1154,10 @@ app.get("/list-tours-filter", async (req, res) => {
     params.push(vehicle);
   }
 
- if (created_at) {
-   query += ` AND t.created_at >= $${params.length + 1}`;
-   params.push(created_at);
- }
+  if (created_at) {
+    query += ` AND t.created_at >= $${params.length + 1}`;
+    params.push(created_at);
+  }
 
   query += `
     GROUP BY
@@ -1166,8 +1178,6 @@ app.get("/list-tours-filter", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-
 
 
 app.get("/get-tour/:tourId", async (req, res) => {
@@ -1197,6 +1207,25 @@ app.get("/get-tour/:tourId", async (req, res) => {
   }
 });
 
+const updateTourStatuses = async () => {
+  try {
+    const currentDate = new Date();
+
+    const updateQuery = `
+      UPDATE tours
+      SET status = 'Inactive'
+      WHERE start_date < $1
+    `;
+
+    await pool.query(updateQuery, [currentDate]);
+
+    console.log("Tour statuses updated successfully");
+  } catch (error) {
+    console.error("Error updating tour statuses:", error.message);
+  }
+};
+
+cron.schedule("0 0 * * *", updateTourStatuses);
 
 app.put(
   "/update-tour/:tour_id",
@@ -1355,7 +1384,6 @@ app.put(
     }
   }
 );
-
 
 // -----------------------------------------------
 module.exports = app;
