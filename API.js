@@ -23,13 +23,12 @@ app.post("/login", async (req, res) => {
   try {
     const query = `
       SELECT 
-        accounts.*
+       *
       FROM 
         accounts 
-      LEFT JOIN 
-        profiles ON accounts.profile_id = profiles.profile_id
+     
       WHERE 
-        (accounts.username = $1 OR profiles.email = $1)`;
+        (username = $1 OR email = $1)`;
     const result = await pool.query(query, [usernameOrEmail]);
     const account = result.rows[0];
 
@@ -112,7 +111,7 @@ app.post("/register", async (req, res) => {
 
   try {
     const checkExistingQuery =
-      "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
+      "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
       username,
       email,
@@ -125,29 +124,22 @@ app.post("/register", async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
 
-    const profileQuery =
-      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
-    const profileResult = await pool.query(profileQuery, [
+    const accountQuery =
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+    const confirmationCode = generateRandomCode(5);
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      1,
+      "Inactive",
+      confirmationCode,
+      "unused",
       name,
       birth_of_date,
       phone_number,
       address,
       email,
       id_card,
-    ]);
-    const profile = profileResult.rows[0];
-
-    const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code, use_confirmation_code) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *";
-    const confirmationCode = generateRandomCode(5);
-    const accountResult = await pool.query(accountQuery, [
-      username,
-      passwordHash,
-      profile.profile_id,
-      1,
-      "Inactive",
-      confirmationCode,
-      "unused",
     ]);
 
     const account = accountResult.rows[0];
@@ -239,7 +231,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
 
   try {
     const checkExistingQuery =
-      "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
+      "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
       username,
       email,
@@ -252,9 +244,16 @@ app.post("/register-business", authenticateToken, async (req, res) => {
 
     const passwordHash = bcrypt.hashSync(password, 10);
 
-    const profileQuery =
-      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6) RETURNING *";
-    const profileResult = await pool.query(profileQuery, [
+    const accountQuery =
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+    const confirmationCode = generateRandomCode(5);
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      3,
+      "Inactive",
+      confirmationCode,
+      "unused",
       name,
       birth_of_date,
       phone_number,
@@ -262,22 +261,6 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       email,
       id_card,
     ]);
-    const profile = profileResult.rows[0];
-
-    const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id, status, confirmation_code, use_confirmation_code) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *";
-    const confirmationCode = generateRandomCode(5);
-    const accountResult = await pool.query(accountQuery, [
-      username,
-      passwordHash,
-      profile.profile_id,
-      3,
-      "Inactive",
-      confirmationCode,
-      "unused",
-    ]);
-
-    const account = accountResult.rows[0];
 
     const confirmationLink = `http://localhost:3000/confirm`;
 
@@ -311,71 +294,14 @@ app.post("/register-business", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/register-guides/:accountId", authenticateToken, async (req, res) => {
-  const { username, password, name, birth_of_date, phone_number, address } =
-    req.body;
-  const { accountId } = req.params;
-
-  try {
-    const { email } = req.body;
-
-    const checkExistingQuery =
-      "SELECT * FROM accounts INNER JOIN profiles ON accounts.profile_id = profiles.profile_id WHERE username = $1 OR profiles.email = $2";
-    const existingResult = await pool.query(checkExistingQuery, [
-      username,
-      email,
-    ]);
-    if (existingResult.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
-    }
-
-    const profileQuery =
-      "INSERT INTO profiles (name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-    const profileResult = await pool.query(profileQuery, [
-      name,
-      birth_of_date,
-      phone_number,
-      address,
-      email,
-    ]);
-    const profile = profileResult.rows[0];
-
-    const passwordHash = bcrypt.hashSync(password, 10);
-
-    const accountQuery =
-      "INSERT INTO accounts (username, password, profile_id, role_id, status) VALUES ($1, $2, $3, $4, $5) RETURNING *";
-    const accountResult = await pool.query(accountQuery, [
-      username,
-      passwordHash,
-      profile.profile_id,
-      4,
-      "Active",
-    ]);
-
-    const account = accountResult.rows[0];
-    const customerQuery =
-      "INSERT INTO guides (account_id, account_business_id) VALUES ($1, $2) RETURNING *";
-    await pool.query(customerQuery, [account.account_id, accountId]);
-
-    res.json({ message: "Đăng ký thành công!" });
-  } catch (error) {
-    console.error("Đăng ký không thành công:", error);
-    res
-      .status(500)
-      .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
-  }
-});
 app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
 
   try {
     const query = `
-      SELECT accounts.username, accounts.status, profiles.name, profiles.birth_of_date, profiles.phone_number, profiles.address, profiles.email, profiles.id_card, profiles.bank_account_name, profiles.bank_account_number 
+      SELECT username,status, name, birth_of_date, phone_number,address, email, id_card, bank_account_name, bank_account_number 
       FROM accounts
-      INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
-      WHERE accounts.account_id = $1
+      WHERE account_id = $1
     `;
     const result = await pool.query(query, [accountId]);
 
@@ -409,11 +335,9 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
 
   try {
     const updateQuery = `
-      UPDATE profiles
-      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7
-      FROM accounts
-      WHERE accounts.profile_id = profiles.profile_id
-        AND accounts.account_id = $8
+      UPDATE accounts
+      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7,username = $8, status= $9
+      WHERE account_id = $10
     `;
     await pool.query(updateQuery, [
       name,
@@ -423,15 +347,10 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
       id_card,
       bank_account_name,
       bank_account_number,
+      username,
+      status,
       accountId,
     ]);
-
-    const updateUsernameQuery = `
-      UPDATE accounts
-      SET username = $1, status= $2
-      WHERE account_id = $3
-    `;
-    await pool.query(updateUsernameQuery, [username, status, accountId]);
 
     res.json({ message: "Thông tin tài khoản đã được cập nhật." });
   } catch (error) {
@@ -480,17 +399,15 @@ app.get("/account/image/:accountId", async (req, res) => {
   const { accountId } = req.params;
 
   try {
-    const query = "SELECT image FROM accountsimage WHERE account_id = $1";
+    const query = "SELECT image FROM accounts WHERE account_id = $1";
     const result = await pool.query(query, [accountId]);
 
-    if (result.rows.length > 0) {
-      const imageData = result.rows[0].image;
+    const imageData = result.rows[0].image;
+    if (imageData != null) {
       res.set("Content-Type", "image/jpeg");
       res.send(imageData);
     } else {
-      res
-        .status(404)
-        .json({ message: "Không tìm thấy hình ảnh cho tài khoản này." });
+      res.status(404).json({ message: "Không có hình ảnh cho tài khoản này." });
     }
   } catch (error) {
     console.error("Lỗi khi lấy hình ảnh:", error);
@@ -510,18 +427,17 @@ app.put(
     const { buffer } = req.file;
 
     try {
-      const checkImageQuery =
-        "SELECT * FROM accountsimage WHERE account_id = $1";
+      const checkImageQuery = "SELECT * FROM accounts WHERE account_id = $1";
       const checkImageResult = await pool.query(checkImageQuery, [accountId]);
 
       if (checkImageResult.rows.length > 0) {
         const updateImageQuery =
-          "UPDATE accountsimage SET image = $1 WHERE account_id = $2";
+          "UPDATE accounts SET image = $1 WHERE account_id = $2";
         await pool.query(updateImageQuery, [buffer, accountId]);
       } else {
         const insertImageQuery =
-          "INSERT INTO accountsimage (account_id, image) VALUES ($1, $2)";
-        await pool.query(insertImageQuery, [accountId, buffer]);
+          "INSERT INTO accounts (image) VALUES ($1) WHERE account_id = $2";
+        await pool.query(insertImageQuery, [buffer, accountId]);
       }
 
       res.json({ message: "Hình ảnh đã được cập nhật." });
@@ -536,40 +452,12 @@ app.get("/get-users", async (req, res) => {
 
   try {
     const query = `
-      SELECT profiles.profile_id, accounts.username,accounts.status,  accounts.account_id, accounts.role_id, profiles.name, profiles.birth_of_date, 
-             profiles.phone_number, profiles.address, profiles.email
-      FROM profiles
-      INNER JOIN accounts ON profiles.profile_id = accounts.profile_id
-      WHERE accounts.role_id = $1
+      SELECT  username, status, account_id, role_id, name, birth_of_date, 
+             phone_number,address, email, image
+      FROM accounts
+      WHERE role_id = $1
     `;
     const result = await pool.query(query, [role_id]);
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Lỗi khi lấy danh sách người dùng:", error);
-    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
-  }
-});
-
-app.get("/accounts-with-role-3", async (req, res) => {
-  const query = `
-    SELECT
-      a.account_id,
-      p.name,
-      ai.image
-    FROM
-      accounts a
-    JOIN
-      profiles p ON a.profile_id = p.profile_id
-    LEFT JOIN
-      accountsimage ai ON a.account_id = ai.account_id
-    WHERE
-      a.role_id = 3
-  `;
-
-  try {
-    const result = await pool.query(query);
-
     const accounts = result.rows.map((row) => ({
       ...row,
       image: row.image ? row.image.toString("base64") : null,
@@ -577,60 +465,11 @@ app.get("/accounts-with-role-3", async (req, res) => {
 
     res.json(accounts);
   } catch (error) {
-    console.error("Error executing query", error.stack);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.get("/get-guides-by-business", authenticateToken, async (req, res) => {
-  const { account_business_id } = req.query;
-
-  try {
-    const query = `
-      SELECT guides.guide_id, guides.account_id, guides.account_business_id,
-             accounts.username, accounts.status,accounts.role_id,
-             profiles.name, profiles.profile_id, profiles.birth_of_date, profiles.phone_number,
-             profiles.address, profiles.email
-      FROM guides
-      INNER JOIN accounts ON guides.account_id = accounts.account_id
-      INNER JOIN profiles ON accounts.profile_id = profiles.profile_id
-      WHERE guides.account_business_id = $1
-    `;
-    const result = await pool.query(query, [account_business_id]);
-
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Lỗi khi lấy danh sách hướng dẫn viên:", error);
+    console.error("Lỗi khi lấy danh sách người dùng:", error);
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
 
-app.delete("/delete-users/:profileId", authenticateToken, async (req, res) => {
-  const profileId = req.params.profileId;
-
-  try {
-    await pool.query("DELETE FROM profiles WHERE profile_id = $1", [profileId]);
-
-    res.json({ message: "Người dùng đã được xoá thành công." });
-  } catch (error) {
-    console.error("Lỗi khi xoá người dùng:", error);
-    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
-  }
-});
-
-app.post("/add-newscategories", authenticateToken, async (req, res) => {
-  const { name } = req.body;
-
-  try {
-    const query = "INSERT INTO NewsCategories (name) VALUES ($1) RETURNING *";
-    const result = await pool.query(query, [name]);
-    const newCategory = result.rows[0];
-    res.status(201).json(newCategory);
-  } catch (error) {
-    console.error("Error adding news category:", error);
-    res.status(500).json({ message: "Failed to add news category." });
-  }
-});
 app.get("/news-categories", authenticateToken, async (req, res) => {
   try {
     const categories = await pool.query("SELECT * FROM NewsCategories");
@@ -661,16 +500,15 @@ app.post(
       );
 
       const newsId = newsInsertResult.rows[0].news_id;
+      
 
       let imageInserted = false;
 
       if (req.file) {
         const imageInsertQuery = `
-        INSERT INTO NewsImages (news_id, image)
-        VALUES ($1, $2)
+        UPDATE News SET image=$1 where news_id=$2
       `;
-        const imageInsertValues = [newsId, req.file.buffer];
-        await pool.query(imageInsertQuery, imageInsertValues);
+        await pool.query(imageInsertQuery, [req.file.buffer, newsId]);
         imageInserted = true;
       }
 
@@ -697,20 +535,18 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
 
     if (accountId) {
       query = `
-        SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+        SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
         FROM news n
         LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-        LEFT JOIN profiles p ON n.account_id = p.profile_id
-        LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+        LEFT JOIN accounts a ON n.account_id = a.account_id      
         WHERE n.account_id = $1
       `;
     } else {
       query = `
-        SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
+        SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
         FROM news n
         LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-        LEFT JOIN profiles p ON n.account_id = p.profile_id
-        LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+         LEFT JOIN accounts a ON n.account_id = a.account_id   
       `;
     }
 
@@ -741,14 +577,12 @@ app.get("/news-detail/:newsId", async (req, res) => {
           n.title, 
           n.content, 
           nc.name AS newscategory_name, 
-          p.name AS profile_name, 
+          a.name AS profile_name, 
           n.created_at
       FROM 
           news n
-      INNER JOIN 
-          newscategories nc ON n.newscategory_id = nc.newscategory_id
-      INNER JOIN 
-          profiles p ON n.account_id = p.profile_id
+      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+        LEFT JOIN accounts a ON n.account_id = a.account_id    
       WHERE 
           n.news_id = $1;
     `;
@@ -827,11 +661,10 @@ app.get("/list-news-travel/:category", async (req, res) => {
   try {
     const category = req.params.category;
     const query = `
-      SELECT n.news_id, n.title, n.content, nc.name as category_name, p.name as profile_name, n.created_at, n.status, n.note, ni.image
-      FROM news n
-      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-      LEFT JOIN profiles p ON n.account_id = p.profile_id
-      LEFT JOIN newsimages ni ON n.news_id = ni.news_id
+    SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
+        FROM news n
+        LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+        LEFT JOIN accounts a ON n.account_id = a.account_id  
       WHERE n.status = 'Confirm' AND nc.name = $1
     `;
     const result = await pool.query(query, [category]);
@@ -1178,7 +1011,6 @@ app.get("/list-tours-filter", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
 
 app.get("/get-tour/:tourId", async (req, res) => {
   try {
