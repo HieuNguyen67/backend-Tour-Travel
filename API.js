@@ -1217,5 +1217,97 @@ app.put(
   }
 );
 
+app.post("/add-policies/:account_id", authenticateToken, async (req, res) => {
+  const accountId = req.params.account_id;
+  const { policytype, description } = req.body;
+
+  if (!policytype || !description) {
+    return res
+      .status(400)
+      .json({ error: "Please provide policytype and description" });
+  }
+
+  try {
+
+    const insertQuery = `
+      INSERT INTO policies (account_id, policytype, description)
+      VALUES ($1, $2, $3)
+      RETURNING *;
+    `;
+    const newPolicy = await pool.query(insertQuery, [
+      accountId,
+      policytype,
+      description,
+    ]);
+
+    res.status(201).json(newPolicy.rows[0]);
+  } catch (error) {
+    console.error("Error adding policy:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.get("/list-policies/:account_id", async (req, res) => {
+  const { account_id } = req.params;
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM policies WHERE account_id = $1",
+      [account_id]
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching policies:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.delete("/delete-policy/:policyId", authenticateToken, async (req, res) => {
+  const { policyId } = req.params;
+
+  try {
+    const query = "DELETE FROM policies WHERE policy_id = $1";
+    await pool.query(query, [policyId]);
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Failed to delete policy:", error);
+    res.status(500).json({ message: "Failed to delete policy" });
+  }
+});
+app.get("/policies/:policy_id", async (req, res) => {
+  const { policy_id } = req.params;
+
+  try {
+    const result = await pool.query(
+      "SELECT * FROM policies WHERE policy_id = $1",
+      [policy_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Policy not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error fetching policy:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.put("/policies/:policy_id", async (req, res) => {
+  const { policy_id } = req.params;
+  const {  policytype, description } = req.body;
+
+  try {
+    const result = await pool.query(
+      "UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *",
+      [ policytype, description, policy_id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Policy not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Error updating policy:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 // -----------------------------------------------
 module.exports = app;
