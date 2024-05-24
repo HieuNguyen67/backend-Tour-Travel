@@ -26,7 +26,6 @@ app.post("/login", async (req, res) => {
        *
       FROM 
         accounts 
-     
       WHERE 
         (username = $1 OR email = $1)`;
     const result = await pool.query(query, [usernameOrEmail]);
@@ -43,10 +42,17 @@ app.post("/login", async (req, res) => {
     }
 
     if (account.status === "Inactive") {
-      return res.status(401).json({
-        message:
-          "Tài khoản của bạn hiện đang bị vô hiệu hóa hoặc chưa được kích hoạt. Vui lòng liên hệ với Tour Travel.",
-      });
+      if(account.use_confirmation_code === "unused"){
+        var message =
+          "Bạn chưa kích hoạt tài khoản. Vui lòng kiểm tra email để kích hoạt !";
+      }else{
+          if (account.note) {
+            var message = " " + account.note;
+          }
+
+      }
+    
+      return res.status(401).json({ message });
     }
 
     const token = jwt.sign(
@@ -66,6 +72,8 @@ app.post("/login", async (req, res) => {
       .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });
   }
 });
+
+
 //-----------------------------------------------
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
@@ -299,7 +307,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
 
   try {
     const query = `
-      SELECT username,status, name, birth_of_date, phone_number,address, email, id_card, bank_account_name, bank_account_number 
+      SELECT username,status, name, birth_of_date, phone_number,address, email, id_card, bank_account_name, bank_account_number , note
       FROM accounts
       WHERE account_id = $1
     `;
@@ -331,13 +339,14 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     id_card,
     bank_account_name,
     bank_account_number,
+    note
   } = req.body;
 
   try {
     const updateQuery = `
       UPDATE accounts
-      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7,username = $8, status= $9
-      WHERE account_id = $10
+      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7,username = $8, status= $9, note = $10
+      WHERE account_id = $11
     `;
     await pool.query(updateQuery, [
       name,
@@ -349,6 +358,7 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
       bank_account_number,
       username,
       status,
+      note,
       accountId,
     ]);
 
@@ -1017,12 +1027,13 @@ app.get("/get-tour/:tourId", async (req, res) => {
     const tourId = req.params.tourId;
 
     const tourQuery = await pool.query(
-      `SELECT t.*, dl.departure_location_name, array_agg(dst.destination_location_name) as destination_locations
+      `SELECT t.*, a.name as account_name, dl.departure_location_name, array_agg(dst.destination_location_name) as destination_locations
       FROM tours t
+      LEFT JOIN accounts a ON t.account_id = a.account_id
       LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
       LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
       WHERE t.tour_id = $1
-      GROUP BY t.tour_id, dl.departure_location_name`,
+      GROUP BY t.tour_id, a.name, dl.departure_location_name`,
       [tourId]
     );
 
@@ -1038,6 +1049,7 @@ app.get("/get-tour/:tourId", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
 
 const updateTourStatuses = async () => {
   try {
@@ -1309,5 +1321,63 @@ app.put("/policies/:policy_id", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+
+app.get("/get-ratings-tour/:tour_id", async (req, res) => {
+  const { tour_id } = req.params;
+
+  try {
+    const result = await pool.query(
+      `
+      SELECT a.name, r.rating, r.review, r.date_rating
+      FROM ratings r
+      JOIN accounts a ON r.account_id = a.account_id
+      WHERE r.tour_id = $1
+    `,
+      [tour_id]
+    );
+
+    const averageRating = await pool.query(
+      `
+      SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings
+      FROM ratings
+      WHERE tour_id = $1
+    `,
+      [tour_id]
+    );
+
+    res.json({
+      reviews: result.rows,
+      averageRating: parseFloat(averageRating.rows[0].avg_rating).toFixed(2),
+      totalRatings: parseInt(averageRating.rows[0].total_ratings, 10),
+    });
+  } catch (error) {
+    console.error("Error fetching ratings:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.post("/report-tour/:tourId/:accountId", async (req, res) => {
+  const { tourId, accountId } = req.params;
+  const {  type_report, description } = req.body;
+
+  try {
+    const query = `
+      INSERT INTO tour_reports (tour_id, account_id, reportdate, type_report, description, status)
+      VALUES ($1, $2, NOW(), $3, $4, 'Pending')
+    `;
+    const values = [
+      tourId,
+      accountId,
+      type_report,
+      description,
+    ];
+    const result = await pool.query(query, values);
+
+    res.status(200).json({ message: "Report tour successful" });
+  } catch (error) {
+    console.error("Error reporting tour:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 // -----------------------------------------------
 module.exports = app;
