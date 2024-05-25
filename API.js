@@ -737,6 +737,29 @@ app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contact" });
   }
 });
+app.post("/send-contact-business/:accountId/:tourId", async (req, res) => {
+  const { accountId, tourId } = req.params;
+  const { fullname, email, phonenumber, message,  } = req.body; 
+
+  try {
+    const newContact = await pool.query(
+      "INSERT INTO contacts_business (account_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW()) RETURNING *",
+      [
+        accountId,
+        tourId,
+        fullname,
+        email,
+        phonenumber,
+        message,
+      ]
+    );
+
+    res.status(201).json(newContact.rows[0]); 
+  } catch (error) {
+    console.error("Error sending contact:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
 app.put(
   "/update-status-contact/:contactId",
   authenticateToken,
@@ -1258,14 +1281,19 @@ app.post("/add-policies/:account_id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-app.get("/list-policies/:account_id", async (req, res) => {
+app.get("/list-policies/:account_id?", async (req, res) => {
   const { account_id } = req.params;
 
   try {
-    const result = await pool.query(
-      "SELECT * FROM policies WHERE account_id = $1",
-      [account_id]
-    );
+     let query;
+     if(account_id){
+      query = `SELECT * FROM policies WHERE account_id = $1`;
+     }else{
+       query = `SELECT * FROM policy_cancellation `;
+     }
+    const result = await pool.query(query, account_id ? [account_id] : []);
+
+
     res.json(result.rows);
   } catch (error) {
     console.error("Error fetching policies:", error.message);
@@ -1290,32 +1318,71 @@ app.get("/policies/:policy_id", async (req, res) => {
   const { policy_id } = req.params;
 
   try {
-    const result = await pool.query(
+    const policiesResult = await pool.query(
       "SELECT * FROM policies WHERE policy_id = $1",
       [policy_id]
     );
-    if (result.rows.length === 0) {
+
+    const cancellationResult = await pool.query(
+      "SELECT * FROM policy_cancellation WHERE policy_id = $1",
+      [policy_id]
+    );
+
+    if (
+      policiesResult.rows.length === 0 &&
+      cancellationResult.rows.length === 0
+    ) {
       return res.status(404).json({ error: "Policy not found" });
     }
-    res.json(result.rows[0]);
+
+    let mergedResult = {};
+    if (policiesResult.rows.length > 0) {
+      mergedResult = policiesResult.rows[0];
+    } else {
+      mergedResult = cancellationResult.rows[0];
+    }
+
+    res.json(mergedResult);
   } catch (error) {
     console.error("Error fetching policy:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
+
 app.put("/policies/:policy_id", async (req, res) => {
   const { policy_id } = req.params;
-  const {  policytype, description } = req.body;
+  const { policytype, description } = req.body;
 
   try {
-    const result = await pool.query(
+    const policiesUpdate = await pool.query(
       "UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *",
-      [ policytype, description, policy_id]
+      [policytype, description, policy_id]
     );
-    if (result.rows.length === 0) {
+
+    const cancellationUpdate = await pool.query(
+      "UPDATE policy_cancellation SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *",
+      [policytype, description, policy_id]
+    );
+
+    if (
+      policiesUpdate.rows.length === 0 &&
+      cancellationUpdate.rows.length === 0
+    ) {
       return res.status(404).json({ error: "Policy not found" });
     }
-    res.json(result.rows[0]);
+
+    let updatedData;
+    let tableName;
+
+    if (policiesUpdate.rows.length > 0) {
+      updatedData = policiesUpdate.rows[0];
+      tableName = "policies";
+    } else {
+      updatedData = cancellationUpdate.rows[0];
+      tableName = "policy_cancellation";
+    }
+
+    res.json({ tableName, updatedData });
   } catch (error) {
     console.error("Error updating policy:", error.message);
     res.status(500).json({ error: "Server error" });
@@ -1376,6 +1443,99 @@ app.post("/report-tour/:tourId/:accountId", async (req, res) => {
   } catch (error) {
     console.error("Error reporting tour:", error.message);
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/report-list", async (req, res) => {
+  try {
+    const reportQuery = await pool.query(`
+      SELECT 
+        tr.report_id, 
+        t.name AS tour_name, 
+        a.name AS account_name, 
+        tr.type_report, 
+        tr.reportdate, 
+        tr.status
+      FROM 
+        tour_reports tr
+      JOIN 
+        tours t ON tr.tour_id = t.tour_id
+      JOIN 
+        accounts a ON tr.account_id = a.account_id
+    `);
+
+    if (reportQuery.rows.length === 0) {
+      return res.status(404).json({ error: "No reports found" });
+    }
+
+    res.status(200).json(reportQuery.rows);
+  } catch (error) {
+    console.error("Error fetching reports:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.get("/report-details/:reportId", async (req, res) => {
+  try {
+    const reportId = req.params.reportId;
+    const reportQuery = await pool.query(
+      `SELECT 
+                tr.report_id, 
+                t.name AS tour_name, 
+                a.name AS account_name, 
+                a.phone_number, 
+                tr.type_report, 
+                tr.description, 
+                tr.reportdate, 
+                tr.status, 
+                a2.name AS nameaccounttour
+            FROM 
+                tour_reports tr
+            JOIN 
+                tours t ON tr.tour_id = t.tour_id
+            JOIN 
+                accounts a ON tr.account_id = a.account_id
+            JOIN 
+                accounts a2 ON t.account_id = a2.account_id
+            WHERE 
+                tr.report_id = $1
+            ORDER BY 
+                tr.reportdate DESC;`,
+      [reportId]
+    );
+
+    if (reportQuery.rows.length === 0) {
+      return res.status(404).json({ error: "Report not found" });
+    }
+
+    const report = reportQuery.rows[0];
+    res.status(200).json(report);
+  } catch (error) {
+    console.error("Error fetching report details:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
+app.put("/update-status-report/:reportId", authenticateToken, async (req, res) => {
+  const { reportId } = req.params;
+  const { status } = req.body;
+
+  try {
+    const query = `
+      UPDATE tour_reports 
+      SET status = $1
+      WHERE report_id = $2
+    `;
+    await pool.query(query, [status, reportId]);
+
+    res
+      .status(200)
+      .json({ message: "Report status updated successfully" });
+  } catch (error) {
+    console.error("Failed to update Report status :", error);
+    res
+      .status(500)
+      .json({ message: "Failed to update Report status " });
   }
 });
 
