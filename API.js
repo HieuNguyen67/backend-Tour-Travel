@@ -720,6 +720,19 @@ app.get("/get-contacts", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contacts" });
   }
 });
+app.get("/get-contacts-business/:accountId", authenticateToken, async (req, res) => {
+  const{accountId}=req.params;
+  try {
+    const query =
+      "SELECT cb.*, t.name FROM contacts_business cb JOIN tours t ON cb.tour_id = t.tour_id  WHERE cb.account_id = $1";
+    const result = await pool.query(query, [accountId]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Failed to fetch contacts:", error);
+    res.status(500).json({ message: "Failed to fetch contacts" });
+  }
+});
+
 app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
   const { contactId } = req.params;
 
@@ -737,6 +750,29 @@ app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contact" });
   }
 });
+app.get(
+  "/contacts-detail-business/:contactId",
+  authenticateToken,
+  async (req, res) => {
+    const { contactId } = req.params;
+
+    try {
+      const query =
+        "SELECT cb.*, t.name FROM contacts_business cb JOIN tours t ON cb.tour_id = t.tour_id  WHERE cb.contact_id = $1";
+      const result = await pool.query(query, [contactId]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Contact not found" });
+      }
+
+      res.json(result.rows[0]);
+    } catch (error) {
+      console.error("Failed to fetch contact:", error);
+      res.status(500).json({ message: "Failed to fetch contact" });
+    }
+  }
+);
+
 app.post("/send-contact-business/:accountId/:tourId", async (req, res) => {
   const { accountId, tourId } = req.params;
   const { fullname, email, phonenumber, message,  } = req.body; 
@@ -770,6 +806,28 @@ app.put(
     try {
       const query = `
       UPDATE contacts 
+      SET status = $1
+      WHERE contact_id = $2
+    `;
+      await pool.query(query, [status, contactId]);
+
+      res.status(200).json({ message: "News status updated successfully" });
+    } catch (error) {
+      console.error("Failed to update news status:", error);
+      res.status(500).json({ message: "Failed to update news status " });
+    }
+  }
+);
+app.put(
+  "/update-status-contact-business/:contactId",
+  authenticateToken,
+  async (req, res) => {
+    const { contactId } = req.params;
+    const { status } = req.body;
+
+    try {
+      const query = `
+      UPDATE contacts_business 
       SET status = $1
       WHERE contact_id = $2
     `;
