@@ -1446,6 +1446,48 @@ app.put("/policies/:policy_id", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
+app.get("/tours-rating/:accountId", async (req, res) => {
+  try {
+    const { accountId } = req.params;
+
+    const query = `
+      SELECT 
+        t.tour_id, 
+        t.name AS tour_name, 
+        COALESCE(AVG(r.rating), 0) AS average_rating, 
+        COUNT(r.rating_id) AS total_ratings,
+         (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image
+      FROM 
+        tours t
+      LEFT JOIN 
+        Ratings r ON t.tour_id = r.tour_id
+      WHERE 
+        t.account_id = $1
+      GROUP BY 
+        t.tour_id, t.name
+      ORDER BY 
+        t.tour_id;
+    `;
+
+    const result = await pool.query(query, [accountId]);
+    const tours = result.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString("base64") : null,
+    }));
+
+
+    if (result.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "No tours found for this account." });
+    }
+    res.json(tours);
+
+  } catch (error) {
+    console.error("Error fetching tours:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 app.get("/get-ratings-tour/:tour_id", async (req, res) => {
   const { tour_id } = req.params;
