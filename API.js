@@ -23,9 +23,11 @@ app.post("/login", async (req, res) => {
   try {
     const query = `
       SELECT 
-       *
+       a.*, bs.business_id, c.customer_id
       FROM 
-        accounts 
+        accounts a
+      LEFT JOIN business bs ON a.account_id = bs.account_id
+      LEFT JOIN customers c ON a.account_id = c.account_id
       WHERE 
         (username = $1 OR email = $1)`;
     const result = await pool.query(query, [usernameOrEmail]);
@@ -42,16 +44,15 @@ app.post("/login", async (req, res) => {
     }
 
     if (account.status === "Inactive") {
-      if(account.use_confirmation_code === "unused"){
+      if (account.use_confirmation_code === "unused") {
         var message =
           "Bạn chưa kích hoạt tài khoản. Vui lòng kiểm tra email để kích hoạt !";
-      }else{
-          if (account.note) {
-            var message = " " + account.note;
-          }
-
+      } else {
+        if (account.note) {
+          var message = " " + account.note;
+        }
       }
-    
+
       return res.status(401).json({ message });
     }
 
@@ -64,6 +65,8 @@ app.post("/login", async (req, res) => {
       role: account.role_id,
       username: account.username,
       account_id: account.account_id,
+      business_id: account.business_id,
+      customer_id: account.customer_id,
     });
   } catch (error) {
     console.error("Đăng nhập không thành công:", error);
@@ -114,7 +117,6 @@ app.post("/register", async (req, res) => {
     phone_number,
     address,
     email,
-    id_card,
   } = req.body;
 
   try {
@@ -133,7 +135,7 @@ app.post("/register", async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -147,15 +149,13 @@ app.post("/register", async (req, res) => {
       phone_number,
       address,
       email,
-      id_card,
     ]);
 
     const account = accountResult.rows[0];
 
-    const referralCode = generateRandomCode(5);
     const customerQuery =
-      "INSERT INTO customers (account_id, referral_code) VALUES ($1, $2) RETURNING *";
-    await pool.query(customerQuery, [account.account_id, referralCode]);
+      "INSERT INTO customers (account_id) VALUES ($1) RETURNING *";
+    await pool.query(customerQuery, [account.account_id]);
 
     const confirmationLink = `http://localhost:3000/confirm`;
 
@@ -181,7 +181,7 @@ app.post("/register", async (req, res) => {
       }
     });
 
-    res.json({ message: "Đăng ký thành công!", referral_code: referralCode });
+    res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
     res
@@ -189,6 +189,8 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+
+
 //-----------------------------------------------
 app.get("/confirm/:confirmationCode", async (req, res) => {
   const confirmationCode = req.params.confirmationCode;
@@ -234,7 +236,6 @@ app.post("/register-business", authenticateToken, async (req, res) => {
     phone_number,
     address,
     email,
-    id_card,
   } = req.body;
 
   try {
@@ -253,7 +254,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, id_card) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -267,8 +268,13 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       phone_number,
       address,
       email,
-      id_card,
     ]);
+    
+    const account = accountResult.rows[0];
+
+    const businessQuery =
+      "INSERT INTO business (account_id) VALUES ($1) RETURNING *";
+    await pool.query(businessQuery, [account.account_id]);
 
     const confirmationLink = `http://localhost:3000/confirm`;
 
@@ -304,14 +310,37 @@ app.post("/register-business", authenticateToken, async (req, res) => {
 
 app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
+ const role = req.query.role;
 
   try {
-    const query = `
-      SELECT username,status, name, birth_of_date, phone_number,address, email, id_card, bank_account_name, bank_account_number , note
-      FROM accounts
-      WHERE account_id = $1
-    `;
-    const result = await pool.query(query, [accountId]);
+    let query = "";
+    let values = [accountId];
+
+    if (role === "1") {
+      query = `
+        SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email, 
+               c.bank_account_name, c.bank_account_number, a.note
+        FROM accounts a
+        LEFT JOIN customers c ON a.account_id = c.account_id
+        WHERE a.account_id = $1
+      `;
+    } else if (role === "3") {
+      query = `
+        SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email, 
+               b.bank_account_name, b.bank_account_number, a.note
+        FROM accounts a
+        LEFT JOIN business b ON a.account_id = b.account_id
+        WHERE a.account_id = $1
+      `;
+    } else {
+      query = `
+        SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email
+        FROM accounts a
+        WHERE a.account_id = $1
+      `;
+    }
+
+    const result = await pool.query(query, values);
 
     if (result.rows.length === 0) {
       return res
@@ -327,6 +356,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
   }
 });
 
+
 app.put("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
   const {
@@ -336,31 +366,50 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     phone_number,
     address,
     status,
-    id_card,
     bank_account_name,
     bank_account_number,
-    note
+    note,
   } = req.body;
+  const role = req.query.role; 
 
   try {
-    const updateQuery = `
+    let updateAccountQuery = `
       UPDATE accounts
-      SET name = $1, birth_of_date = $2, phone_number = $3, address = $4, id_card=$5, bank_account_name = $6, bank_account_number = $7,username = $8, status= $9, note = $10
-      WHERE account_id = $11
+      SET username = $1, name = $2, birth_of_date = $3, phone_number = $4, address = $5, status = $6, note = $7
+      WHERE account_id = $8
     `;
-    await pool.query(updateQuery, [
+    let values = [
+      username,
       name,
       birth_of_date,
       phone_number,
       address,
-      id_card,
-      bank_account_name,
-      bank_account_number,
-      username,
       status,
       note,
       accountId,
-    ]);
+    ];
+
+    await pool.query(updateAccountQuery, values);
+
+    if (role === "1") {
+      let updateCustomerQuery = `
+        UPDATE customers
+        SET bank_account_name = $1, bank_account_number = $2
+        WHERE account_id = $3
+      `;
+      let customerValues = [bank_account_name, bank_account_number, accountId];
+
+      await pool.query(updateCustomerQuery, customerValues);
+    } else if (role === "3") {
+      let updateBusinessQuery = `
+        UPDATE business
+        SET bank_account_name = $1, bank_account_number = $2
+        WHERE account_id = $3
+      `;
+      let businessValues = [bank_account_name, bank_account_number, accountId];
+
+      await pool.query(updateBusinessQuery, businessValues);
+    }
 
     res.json({ message: "Thông tin tài khoản đã được cập nhật." });
   } catch (error) {
@@ -368,6 +417,7 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
+
 app.put("/account/change-password/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
   const { oldPassword, newPassword, confirmPassword } = req.body;
@@ -936,8 +986,8 @@ app.get("/tourcategories", async (req, res) => {
   }
 });
 
-app.get("/list-tours/:account_id", async (req, res) => {
-  const { account_id } = req.params;
+app.get("/list-tours/:business_id", async (req, res) => {
+  const { business_id } = req.params;
 
   const query = `
     SELECT
@@ -967,13 +1017,13 @@ app.get("/list-tours/:account_id", async (req, res) => {
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
     WHERE
-      t.account_id = $1
+      t.business_id = $1
     GROUP BY
       t.tour_id, dl.departure_location_name, tc.name
   `;
 
   try {
-    const result = await pool.query(query, [account_id]);
+    const result = await pool.query(query, [business_id]);
 
     const tours = result.rows.map((row) => ({
       ...row,
