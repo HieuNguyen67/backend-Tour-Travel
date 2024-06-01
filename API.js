@@ -76,7 +76,6 @@ app.post("/login", async (req, res) => {
   }
 });
 
-
 //-----------------------------------------------
 function authenticateToken(req, res, next) {
   const authHeader = req.headers["authorization"];
@@ -190,7 +189,6 @@ app.post("/register", async (req, res) => {
   }
 });
 
-
 //-----------------------------------------------
 app.get("/confirm/:confirmationCode", async (req, res) => {
   const confirmationCode = req.params.confirmationCode;
@@ -269,7 +267,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       address,
       email,
     ]);
-    
+
     const account = accountResult.rows[0];
 
     const businessQuery =
@@ -310,7 +308,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
 
 app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
- const role = req.query.role;
+  const role = req.query.role;
 
   try {
     let query = "";
@@ -356,7 +354,6 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
   }
 });
 
-
 app.put("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
   const {
@@ -370,7 +367,7 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     bank_account_number,
     note,
   } = req.body;
-  const role = req.query.role; 
+  const role = req.query.role;
 
   try {
     let updateAccountQuery = `
@@ -560,7 +557,6 @@ app.post(
       );
 
       const newsId = newsInsertResult.rows[0].news_id;
-      
 
       let imageInserted = false;
 
@@ -770,18 +766,22 @@ app.get("/get-contacts", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch contacts" });
   }
 });
-app.get("/get-contacts-business/:accountId", authenticateToken, async (req, res) => {
-  const{accountId}=req.params;
-  try {
-    const query =
-      "SELECT cb.*, t.name FROM contacts_business cb JOIN tours t ON cb.tour_id = t.tour_id  WHERE cb.account_id = $1";
-    const result = await pool.query(query, [accountId]);
-    res.json(result.rows);
-  } catch (error) {
-    console.error("Failed to fetch contacts:", error);
-    res.status(500).json({ message: "Failed to fetch contacts" });
+app.get(
+  "/get-contacts-business/:accountId",
+  authenticateToken,
+  async (req, res) => {
+    const { accountId } = req.params;
+    try {
+      const query =
+        "SELECT cb.*, t.name FROM contacts_business cb JOIN tours t ON cb.tour_id = t.tour_id  WHERE cb.business_id = $1";
+      const result = await pool.query(query, [accountId]);
+      res.json(result.rows);
+    } catch (error) {
+      console.error("Failed to fetch contacts:", error);
+      res.status(500).json({ message: "Failed to fetch contacts" });
+    }
   }
-});
+);
 
 app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
   const { contactId } = req.params;
@@ -823,24 +823,17 @@ app.get(
   }
 );
 
-app.post("/send-contact-business/:accountId/:tourId", async (req, res) => {
-  const { accountId, tourId } = req.params;
-  const { fullname, email, phonenumber, message,  } = req.body; 
+app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
+  const { businessId, tourId } = req.params;
+  const { fullname, email, phonenumber, message } = req.body;
 
   try {
     const newContact = await pool.query(
-      "INSERT INTO contacts_business (account_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW()) RETURNING *",
-      [
-        accountId,
-        tourId,
-        fullname,
-        email,
-        phonenumber,
-        message,
-      ]
+      "INSERT INTO contacts_business (business_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW()) RETURNING *",
+      [businessId, tourId, fullname, email, phonenumber, message]
     );
 
-    res.status(201).json(newContact.rows[0]); 
+    res.status(201).json(newContact.rows[0]);
   } catch (error) {
     console.error("Error sending contact:", error.message);
     res.status(500).json({ error: "Server error" });
@@ -892,12 +885,12 @@ app.put(
 );
 
 app.post(
-  "/add-tours/:account_id",
+  "/add-tours/:business_id",
   authenticateToken,
   upload.array("images"),
   async (req, res) => {
     try {
-      const account_id = req.params.account_id;
+      const business_id = req.params.business_id;
       const {
         name,
         description,
@@ -921,7 +914,7 @@ app.post(
       }
 
       const newTour = await pool.query(
-        `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, account_id, created_at)
+        `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, business_id, created_at)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, NOW())
             RETURNING tour_id`,
         [
@@ -936,7 +929,7 @@ app.post(
           vehicle,
           hotel,
           tourcategory_id,
-          account_id,
+          business_id,
         ]
       );
 
@@ -1081,7 +1074,9 @@ app.get("/list-tours-filter", async (req, res) => {
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
     LEFT JOIN
-      accounts a ON t.account_id = a.account_id
+      business b ON t.business_id = b.business_id
+    LEFT JOIN 
+      accounts a ON b.account_id = a.account_id
     WHERE
       t.status = 'Active' AND tc.name = $1 AND a.status = 'Active'
   `;
@@ -1160,7 +1155,10 @@ app.get("/get-tour/:tourId", async (req, res) => {
     const tourQuery = await pool.query(
       `SELECT t.*, a.name as account_name, dl.departure_location_name, array_agg(dst.destination_location_name) as destination_locations
       FROM tours t
-      LEFT JOIN accounts a ON t.account_id = a.account_id
+         LEFT JOIN
+      business b ON t.business_id = b.business_id
+    LEFT JOIN 
+      accounts a ON b.account_id = a.account_id
       LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
       LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
       WHERE t.tour_id = $1
@@ -1180,7 +1178,6 @@ app.get("/get-tour/:tourId", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
 
 const updateTourStatuses = async () => {
   try {
@@ -1360,8 +1357,8 @@ app.put(
   }
 );
 
-app.post("/add-policies/:account_id", authenticateToken, async (req, res) => {
-  const accountId = req.params.account_id;
+app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
+  const businessId = req.params.business_id;
   const { policytype, description } = req.body;
 
   if (!policytype || !description) {
@@ -1371,14 +1368,13 @@ app.post("/add-policies/:account_id", authenticateToken, async (req, res) => {
   }
 
   try {
-
     const insertQuery = `
-      INSERT INTO policies (account_id, policytype, description)
+      INSERT INTO policies (business_id, policytype, description)
       VALUES ($1, $2, $3)
       RETURNING *;
     `;
     const newPolicy = await pool.query(insertQuery, [
-      accountId,
+      businessId,
       policytype,
       description,
     ]);
@@ -1389,18 +1385,40 @@ app.post("/add-policies/:account_id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-app.get("/list-policies/:account_id?", async (req, res) => {
-  const { account_id } = req.params;
+app.post("/add-policy-cancellation", async (req, res) => {
+  const { days_before_departure, refund_percentage } = req.body;
+
+  if (days_before_departure == null || refund_percentage == null) {
+    return res
+      .status(400)
+      .json({
+        error: "Both days_before_departure and refund_percentage are required",
+      });
+  }
 
   try {
-     let query;
-     if(account_id){
-      query = `SELECT * FROM policies WHERE account_id = $1`;
-     }else{
-       query = `SELECT * FROM policy_cancellation `;
-     }
-    const result = await pool.query(query, account_id ? [account_id] : []);
+    const result = await pool.query(
+      "INSERT INTO policy_cancellation (days_before_departure, refund_percentage) VALUES ($1, $2) RETURNING *",
+      [days_before_departure, refund_percentage]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error("Error inserting policy cancellation:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
 
+app.get("/list-policies/:business_id?", async (req, res) => {
+  const { business_id } = req.params;
+
+  try {
+    let query;
+    if (business_id) {
+      query = `SELECT * FROM policies WHERE business_id = $1`;
+    } else {
+      query = `SELECT * FROM policy_cancellation `;
+    }
+    const result = await pool.query(query, business_id ? [business_id] : []);
 
     res.json(result.rows);
   } catch (error) {
@@ -1411,9 +1429,16 @@ app.get("/list-policies/:account_id?", async (req, res) => {
 
 app.delete("/delete-policy/:policyId", authenticateToken, async (req, res) => {
   const { policyId } = req.params;
+    const role = req.query.role;
+
 
   try {
-    const query = "DELETE FROM policies WHERE policy_id = $1";
+    let query="";
+    if(role==="3"){ query = `DELETE FROM policies WHERE policy_id = $1`;}
+    else{
+       query = `DELETE FROM policy_cancellation WHERE policy_id = $1`;
+    }
+    
     await pool.query(query, [policyId]);
 
     res.status(204).send();
@@ -1424,71 +1449,62 @@ app.delete("/delete-policy/:policyId", authenticateToken, async (req, res) => {
 });
 app.get("/policies/:policy_id", async (req, res) => {
   const { policy_id } = req.params;
+  const role = req.query.role;
 
   try {
-    const policiesResult = await pool.query(
-      "SELECT * FROM policies WHERE policy_id = $1",
+    let query="";
+    if(role==="3"){
+      query = `SELECT * FROM policies WHERE policy_id = $1`;
+    }else{
+      query = `SELECT * FROM policy_cancellation WHERE policy_id = $1`;
+    }
+    const policiesResult = await pool.query(query,
       [policy_id]
     );
 
-    const cancellationResult = await pool.query(
-      "SELECT * FROM policy_cancellation WHERE policy_id = $1",
-      [policy_id]
-    );
-
-    if (
-      policiesResult.rows.length === 0 &&
-      cancellationResult.rows.length === 0
-    ) {
+    if (policiesResult.rows.length === 0) {
       return res.status(404).json({ error: "Policy not found" });
     }
 
-    let mergedResult = {};
-    if (policiesResult.rows.length > 0) {
-      mergedResult = policiesResult.rows[0];
-    } else {
-      mergedResult = cancellationResult.rows[0];
-    }
-
-    res.json(mergedResult);
+    const policy = policiesResult.rows[0];
+    res.json(policy);
   } catch (error) {
     console.error("Error fetching policy:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
 
+
 app.put("/policies/:policy_id", async (req, res) => {
   const { policy_id } = req.params;
-  const { policytype, description } = req.body;
+    const role = req.query.role;
+  const { policytype, description, days_before_departure, refund_percentage } =
+    req.body;
 
   try {
-    const policiesUpdate = await pool.query(
-      "UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *",
-      [policytype, description, policy_id]
-    );
+    let query="";
+    if(role === "3"){
+      query = `UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *`;
+      var policiesUpdate = await pool.query(query, [
+        policytype,
+        description,
+        policy_id,
+      ]);
+    }else{
+       query = `UPDATE policy_cancellation SET days_before_departure = $1, refund_percentage = $2 WHERE policy_id = $3 RETURNING *`;
+       var policiesUpdate = await pool.query(query, [
+        days_before_departure, refund_percentage,
+         policy_id,
+       ]);
+    }
+    
 
-    const cancellationUpdate = await pool.query(
-      "UPDATE policy_cancellation SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *",
-      [policytype, description, policy_id]
-    );
-
-    if (
-      policiesUpdate.rows.length === 0 &&
-      cancellationUpdate.rows.length === 0
-    ) {
+    if (policiesUpdate.rows.length === 0) {
       return res.status(404).json({ error: "Policy not found" });
     }
 
-    let updatedData;
-    let tableName;
-
-    if (policiesUpdate.rows.length > 0) {
-      updatedData = policiesUpdate.rows[0];
-      tableName = "policies";
-    } else {
-      updatedData = cancellationUpdate.rows[0];
-      tableName = "policy_cancellation";
-    }
+    const updatedData = policiesUpdate.rows[0];
+    const tableName = "policies";
 
     res.json({ tableName, updatedData });
   } catch (error) {
@@ -1496,9 +1512,10 @@ app.put("/policies/:policy_id", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-app.get("/tours-rating/:accountId", async (req, res) => {
+
+app.get("/tours-rating/:businessId", async (req, res) => {
   try {
-    const { accountId } = req.params;
+    const { businessId } = req.params;
 
     const query = `
       SELECT 
@@ -1512,19 +1529,18 @@ app.get("/tours-rating/:accountId", async (req, res) => {
       LEFT JOIN 
         Ratings r ON t.tour_id = r.tour_id
       WHERE 
-        t.account_id = $1
+        t.business_id = $1
       GROUP BY 
         t.tour_id, t.name
       ORDER BY 
         t.tour_id;
     `;
 
-    const result = await pool.query(query, [accountId]);
+    const result = await pool.query(query, [businessId]);
     const tours = result.rows.map((row) => ({
       ...row,
       image: row.image ? row.image.toString("base64") : null,
     }));
-
 
     if (result.rows.length === 0) {
       return res
@@ -1532,7 +1548,6 @@ app.get("/tours-rating/:accountId", async (req, res) => {
         .json({ message: "No tours found for this account." });
     }
     res.json(tours);
-
   } catch (error) {
     console.error("Error fetching tours:", error);
     res.status(500).json({ error: "Internal server error" });
@@ -1547,7 +1562,10 @@ app.get("/get-ratings-tour/:tour_id", async (req, res) => {
       `
       SELECT a.name, r.rating, r.review, r.date_rating
       FROM ratings r
-      JOIN accounts a ON r.account_id = a.account_id
+      LEFT JOIN
+      customers c ON r.customer_id = c.customer_id
+      LEFT JOIN 
+      accounts a ON c.account_id = a.account_id
       WHERE r.tour_id = $1
     `,
       [tour_id]
@@ -1572,21 +1590,16 @@ app.get("/get-ratings-tour/:tour_id", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-app.post("/report-tour/:tourId/:accountId", async (req, res) => {
-  const { tourId, accountId } = req.params;
-  const {  type_report, description } = req.body;
+app.post("/report-tour/:tourId/:customerId", async (req, res) => {
+  const { tourId, customerId } = req.params;
+  const { type_report, description } = req.body;
 
   try {
     const query = `
-      INSERT INTO tour_reports (tour_id, account_id, reportdate, type_report, description, status)
+      INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status)
       VALUES ($1, $2, NOW(), $3, $4, 'Pending')
     `;
-    const values = [
-      tourId,
-      accountId,
-      type_report,
-      description,
-    ];
+    const values = [tourId, customerId, type_report, description];
     const result = await pool.query(query, values);
 
     res.status(200).json({ message: "Report tour successful" });
@@ -1610,8 +1623,11 @@ app.get("/report-list", async (req, res) => {
         tour_reports tr
       JOIN 
         tours t ON tr.tour_id = t.tour_id
-      JOIN 
-        accounts a ON tr.account_id = a.account_id
+           LEFT JOIN
+      customers c ON tr.customer_id = c.customer_id
+    LEFT JOIN 
+      accounts a ON c.account_id = a.account_id
+      
     `);
 
     if (reportQuery.rows.length === 0) {
@@ -1641,12 +1657,16 @@ app.get("/report-details/:reportId", async (req, res) => {
                 a2.name AS nameaccounttour
             FROM 
                 tour_reports tr
-            JOIN 
+            LEFT JOIN 
                 tours t ON tr.tour_id = t.tour_id
-            JOIN 
-                accounts a ON tr.account_id = a.account_id
-            JOIN 
-                accounts a2 ON t.account_id = a2.account_id
+            LEFT JOIN
+                customers c ON tr.customer_id = c.customer_id
+            LEFT JOIN 
+                accounts a ON c.account_id = a.account_id
+            LEFT JOIN
+                business b ON t.business_id = b.business_id
+            LEFT JOIN 
+                accounts a2 ON b.account_id = a2.account_id
             WHERE 
                 tr.report_id = $1
             ORDER BY 
@@ -1666,28 +1686,42 @@ app.get("/report-details/:reportId", async (req, res) => {
   }
 });
 
-app.put("/update-status-report/:reportId", authenticateToken, async (req, res) => {
-  const { reportId } = req.params;
-  const { status } = req.body;
+app.put(
+  "/update-status-report/:reportId",
+  authenticateToken,
+  async (req, res) => {
+    const { reportId } = req.params;
+    const { status } = req.body;
 
-  try {
-    const query = `
+    try {
+      const query = `
       UPDATE tour_reports 
       SET status = $1
       WHERE report_id = $2
     `;
-    await pool.query(query, [status, reportId]);
+      await pool.query(query, [status, reportId]);
 
-    res
-      .status(200)
-      .json({ message: "Report status updated successfully" });
+      res.status(200).json({ message: "Report status updated successfully" });
+    } catch (error) {
+      console.error("Failed to update Report status :", error);
+      res.status(500).json({ message: "Failed to update Report status " });
+    }
+  }
+);
+app.get("/pending-count-status-contact", async (req, res) => {
+  try {
+    const client = await pool.connect();
+    const result = await client.query(
+      "SELECT COUNT(*) FROM contacts WHERE status = $1",
+      ["Pending"]
+    );
+    const count = result.rows[0].count;
+    client.release();
+    res.json({ count });
   } catch (error) {
-    console.error("Failed to update Report status :", error);
-    res
-      .status(500)
-      .json({ message: "Failed to update Report status " });
+    console.error("Error executing query:", error);
+    res.status(500).json({ message: "Internal Server Error" });
   }
 });
-
 // -----------------------------------------------
 module.exports = app;
