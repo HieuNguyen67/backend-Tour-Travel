@@ -317,7 +317,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
     if (role === "1") {
       query = `
         SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email, 
-               c.bank_account_name, c.bank_account_number, a.note
+               c.bank_account_name, c.bank_account_number,c.bank_name, a.note
         FROM accounts a
         LEFT JOIN customers c ON a.account_id = c.account_id
         WHERE a.account_id = $1
@@ -325,7 +325,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
     } else if (role === "3") {
       query = `
         SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email, 
-               b.bank_account_name, b.bank_account_number, a.note
+               b.bank_account_name, b.bank_account_number,b.bank_name, a.note
         FROM accounts a
         LEFT JOIN business b ON a.account_id = b.account_id
         WHERE a.account_id = $1
@@ -365,6 +365,7 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     status,
     bank_account_name,
     bank_account_number,
+    bank_name,
     note,
   } = req.body;
   const role = req.query.role;
@@ -391,19 +392,19 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     if (role === "1") {
       let updateCustomerQuery = `
         UPDATE customers
-        SET bank_account_name = $1, bank_account_number = $2
-        WHERE account_id = $3
+        SET bank_account_name = $1, bank_account_number = $2, bank_name=$3
+        WHERE account_id = $4
       `;
-      let customerValues = [bank_account_name, bank_account_number, accountId];
+      let customerValues = [bank_account_name, bank_account_number,bank_name, accountId];
 
       await pool.query(updateCustomerQuery, customerValues);
     } else if (role === "3") {
       let updateBusinessQuery = `
         UPDATE business
-        SET bank_account_name = $1, bank_account_number = $2
-        WHERE account_id = $3
+        SET bank_account_name = $1, bank_account_number = $2, bank_name=$3
+        WHERE account_id = $4
       `;
-      let businessValues = [bank_account_name, bank_account_number, accountId];
+      let businessValues = [bank_account_name, bank_account_number,bank_name, accountId];
 
       await pool.query(updateBusinessQuery, businessValues);
     }
@@ -1708,20 +1709,70 @@ app.put(
     }
   }
 );
-app.get("/pending-count-status-contact", async (req, res) => {
+const getPendingCount = async (table,status, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
-      "SELECT COUNT(*) FROM contacts WHERE status = $1",
-      ["Pending"]
+      `SELECT COUNT(*) FROM ${table} WHERE status = $1`,
+      [status]
     );
     const count = result.rows[0].count;
     client.release();
     res.json({ count });
   } catch (error) {
-    console.error("Error executing query:", error);
+    console.error(`Error executing query for table ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }
+};
+app.get("/pending-count-status-contact", (req, res) => {
+  getPendingCount("contacts","Pending", res);
 });
+
+app.get("/pending-count-status-report", (req, res) => {
+  getPendingCount("tour_reports", "Pending", res);
+});
+
+app.get("/pending-count-status-news", (req, res) => {
+  getPendingCount("news", "Pending", res);
+});
+app.get("/pending-count-status-tour", (req, res) => {
+  getPendingCount("tours", "Inactive", res);
+});
+app.get("/pending-count-status-contact-business", (req, res) => {
+  getPendingCount("contacts_business", "Pending", res);
+});
+
+app.get("/coupons/:customerId", async (req, res) => {
+  const customerId = req.params.customerId;
+
+  try {
+    const couponsQuery = `
+            SELECT *
+            FROM coupons
+            WHERE customer_id = $1
+        `;
+
+    const totalPointsQuery = `
+            SELECT SUM(points) AS total_used_points
+            FROM coupons
+            WHERE customer_id = $1 AND is_used = 'Unused'
+        `;
+
+    const couponsResult = await pool.query(couponsQuery, [customerId]);
+    const totalPointsResult = await pool.query(totalPointsQuery, [customerId]);
+
+    const coupons = couponsResult.rows;
+    const totalUsedPoints = totalPointsResult.rows[0].total_used_points || 0;
+
+    res.json({
+      coupons: coupons,
+      totalUsedPoints: totalUsedPoints,
+    });
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
 // -----------------------------------------------
 module.exports = app;
