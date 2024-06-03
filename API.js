@@ -8,6 +8,7 @@ const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
+const moment = require("moment-timezone");
 
 pool.connect((err) => {
   if (err) {
@@ -1750,6 +1751,7 @@ app.get("/coupons/:customerId", async (req, res) => {
             SELECT *
             FROM coupons
             WHERE customer_id = $1
+            ORDER BY created_at DESC
         `;
 
     const totalPointsQuery = `
@@ -1770,6 +1772,60 @@ app.get("/coupons/:customerId", async (req, res) => {
     });
   } catch (error) {
     console.error("Error fetching coupons:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/daily-checkin/:customerId", async (req, res) => {
+  const customerId = req.params.customerId;
+const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
+
+  try {
+    const checkinQuery = `
+      SELECT * FROM daily_checkin 
+      WHERE customer_id = $1 AND checkindate = $2
+    `;
+    const checkinResult = await pool.query(checkinQuery, [
+      customerId,
+      currentDate,
+    ]);
+
+    if (checkinResult.rows.length > 0) {
+      return res.status(400).json({ message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !" });
+    }
+
+    const insertCheckinQuery = `
+      INSERT INTO daily_checkin (customer_id, checkindate) 
+      VALUES ($1, $2)
+    `;
+    await pool.query(insertCheckinQuery, [customerId, currentDate]);
+
+    const insertCouponQuery = `
+      INSERT INTO coupons (customer_id, points, description, created_at, expires_at, is_used) 
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `;
+    const points = 1000;
+    const description = "Điểm danh hằng ngày";
+    const createAt = new Date().toISOString();
+    const expiresAt = new Date(
+      new Date().setDate(new Date().getDate() + 30)
+    ).toISOString(); 
+    const isUsed = "Unused";
+
+    await pool.query(insertCouponQuery, [
+      customerId,
+      points,
+      description,
+      currentDate,
+      expiresAt,
+      isUsed,
+    ]);
+
+    res
+      .status(200)
+      .json({ message: "Điểm danh thành công và đã nhận được Xu" });
+  } catch (error) {
+    console.error("Error during daily check-in:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
