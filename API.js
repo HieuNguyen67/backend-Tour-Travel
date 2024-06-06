@@ -24,11 +24,12 @@ app.post("/login", async (req, res) => {
   try {
     const query = `
       SELECT 
-       a.*, bs.business_id, c.customer_id
+       a.*, bs.business_id, c.customer_id, ad.admin_id
       FROM 
         accounts a
       LEFT JOIN business bs ON a.account_id = bs.account_id
       LEFT JOIN customers c ON a.account_id = c.account_id
+      LEFT JOIN admin ad ON a.account_id = ad.account_id
       WHERE 
         (username = $1 OR email = $1)`;
     const result = await pool.query(query, [usernameOrEmail]);
@@ -68,6 +69,7 @@ app.post("/login", async (req, res) => {
       account_id: account.account_id,
       business_id: account.business_id,
       customer_id: account.customer_id,
+      admin_id: account.admin_id
     });
   } catch (error) {
     console.error("Đăng nhập không thành công:", error);
@@ -396,7 +398,12 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
         SET bank_account_name = $1, bank_account_number = $2, bank_name=$3
         WHERE account_id = $4
       `;
-      let customerValues = [bank_account_name, bank_account_number,bank_name, accountId];
+      let customerValues = [
+        bank_account_name,
+        bank_account_number,
+        bank_name,
+        accountId,
+      ];
 
       await pool.query(updateCustomerQuery, customerValues);
     } else if (role === "3") {
@@ -405,7 +412,12 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
         SET bank_account_name = $1, bank_account_number = $2, bank_name=$3
         WHERE account_id = $4
       `;
-      let businessValues = [bank_account_name, bank_account_number,bank_name, accountId];
+      let businessValues = [
+        bank_account_name,
+        bank_account_number,
+        bank_name,
+        accountId,
+      ];
 
       await pool.query(updateBusinessQuery, businessValues);
     }
@@ -540,21 +552,30 @@ app.get("/news-categories", authenticateToken, async (req, res) => {
 });
 
 app.post(
-  "/add-news",
+  "/add-news/:account_id",
   authenticateToken,
   upload.single("image"),
   async (req, res) => {
-    const { title, content, newscategory_id, account_id } = req.body;
+    const role = req.query.role;
+    const accountId = req.params.account_id;
+
+    const { title, content, newscategory_id } = req.body;
 
     try {
-      const newsInsertQuery = `
-      INSERT INTO News (title, content, newscategory_id, account_id, created_at, status)
-      VALUES ($1, $2, $3, $4, NOW(), 'Pending')
-      RETURNING news_id
-    `;
-      const newsInsertValues = [title, content, newscategory_id, account_id];
+      let query="";
+      if(role=== "3"){
+        query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id, created_at, status, posted_by_type)
+      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business')
+      RETURNING news_id`;
+      }else{
+         query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id, created_at, status, posted_by_type)
+      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin')
+      RETURNING news_id`;
+      }
+      
+      const newsInsertValues = [title, content, newscategory_id, accountId];
       const newsInsertResult = await pool.query(
-        newsInsertQuery,
+        query,
         newsInsertValues
       );
 
@@ -588,27 +609,50 @@ app.post(
 
 app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
   try {
-    let query;
     const accountId = req.params.account_id;
+    let query;
+    const params = [];
 
     if (accountId) {
       query = `
         SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
         FROM news n
         LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-        LEFT JOIN accounts a ON n.account_id = a.account_id      
-        WHERE n.account_id = $1
+               LEFT JOIN business b ON n.posted_by_type = 'business' AND n.posted_by_id = b.business_id
+                LEFT JOIN accounts a ON b.account_id = a.account_id
+        WHERE n.posted_by_id = $1 and n.posted_by_type= 'business'
       `;
+      params.push(accountId);
     } else {
       query = `
-        SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
-        FROM news n
-        LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-         LEFT JOIN accounts a ON n.account_id = a.account_id   
+              SELECT 
+          n.news_id, 
+          n.title, 
+          n.content, 
+          nc.name as category_name, 
+          COALESCE(a.name, ab.name) as profile_name, 
+          n.created_at, 
+          n.status, 
+          n.note, 
+          n.image
+          FROM 
+          news n
+          LEFT JOIN 
+          newscategories nc ON n.newscategory_id = nc.newscategory_id
+          LEFT JOIN 
+          admin ad ON n.posted_by_type = 'admin' AND n.posted_by_id = ad.admin_id
+          LEFT JOIN 
+          business b ON n.posted_by_type = 'business' AND n.posted_by_id = b.business_id
+          LEFT JOIN 
+          accounts a ON ad.account_id = a.account_id
+          LEFT JOIN 
+          accounts ab ON b.account_id = ab.account_id
+         
+
       `;
     }
 
-    const result = await pool.query(query, accountId ? [accountId] : []);
+    const result = await pool.query(query, params);
 
     const newsWithBase64Images = result.rows.map((row) => {
       if (row.image) {
@@ -625,6 +669,7 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
+
 app.get("/news-detail/:newsId", async (req, res) => {
   const { newsId } = req.params;
 
@@ -635,12 +680,21 @@ app.get("/news-detail/:newsId", async (req, res) => {
           n.title, 
           n.content, 
           nc.name AS newscategory_name, 
-          a.name AS profile_name, 
-          n.created_at
+          n.created_at,
+          CASE
+            WHEN n.posted_by_type = 'admin' THEN a.name
+            WHEN n.posted_by_type = 'business' THEN a.name
+            ELSE NULL
+          END as profile_name
       FROM 
           news n
       LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-        LEFT JOIN accounts a ON n.account_id = a.account_id    
+      LEFT JOIN admin ad ON n.posted_by_type = 'admin' AND n.posted_by_id = ad.admin_id
+      LEFT JOIN business b ON n.posted_by_type = 'business' AND n.posted_by_id = b.business_id
+      LEFT JOIN accounts a ON (
+        (n.posted_by_type = 'admin' AND ad.account_id = a.account_id) OR 
+        (n.posted_by_type = 'business' AND b.account_id = a.account_id)
+      )
       WHERE 
           n.news_id = $1;
     `;
@@ -652,6 +706,7 @@ app.get("/news-detail/:newsId", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
+
 app.delete("/delete-news/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
 
@@ -704,8 +759,7 @@ app.put("/update-news/:newsId", authenticateToken, async (req, res) => {
   const { title, content } = req.body;
 
   try {
-    const query =
-      "UPDATE news SET title = $1, content = $2, status = 'Pending' WHERE news_id = $3";
+    const query = "UPDATE news SET title = $1, content = $2 WHERE news_id = $3";
     await pool.query(query, [title, content, newsId]);
 
     res.status(200).json({ message: "News updated successfully" });
@@ -719,10 +773,20 @@ app.get("/list-news-travel/:category", async (req, res) => {
   try {
     const category = req.params.category;
     const query = `
-    SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
-        FROM news n
-        LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-        LEFT JOIN accounts a ON n.account_id = a.account_id  
+      SELECT n.news_id, n.title, n.content, nc.name as category_name, n.created_at, n.status, n.note, n.image,
+        CASE
+          WHEN n.posted_by_type = 'admin' THEN a.name
+          WHEN n.posted_by_type = 'business' THEN a.name
+          ELSE NULL
+        END as profile_name
+      FROM news n
+      LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
+      LEFT JOIN admin ad ON n.posted_by_type = 'admin' AND n.posted_by_id = ad.admin_id
+      LEFT JOIN business b ON n.posted_by_type = 'business' AND n.posted_by_id = b.business_id
+      LEFT JOIN accounts a ON (
+        (n.posted_by_type = 'admin' AND ad.account_id = a.account_id) OR 
+        (n.posted_by_type = 'business' AND b.account_id = a.account_id)
+      )
       WHERE n.status = 'Confirm' AND nc.name = $1
     `;
     const result = await pool.query(query, [category]);
@@ -742,6 +806,7 @@ app.get("/list-news-travel/:category", async (req, res) => {
     res.status(500).json({ message: "Failed to fetch news" });
   }
 });
+
 app.post("/send-contact", async (req, res) => {
   const { fullname, email, phonenumber, message, address } = req.body;
 
@@ -885,6 +950,17 @@ app.put(
     }
   }
 );
+app.get("/locations", async (req, res) => {
+  const { location_type } = req.query;
+  try {
+    const query = "SELECT * FROM locations WHERE location_type =$1";
+    const result = await pool.query(query, [location_type]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching locations:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 app.post(
   "/add-tours/:business_id",
@@ -905,7 +981,7 @@ app.post(
         vehicle,
         hotel,
         tourcategory_id,
-        departure_location_name,
+        location_departure_id,
         destination_locations,
       } = req.body;
 
@@ -938,14 +1014,14 @@ app.post(
       const tour_id = newTour.rows[0].tour_id;
 
       await pool.query(
-        `INSERT INTO departurelocation (departure_location_name, tour_id)
+        `INSERT INTO departurelocation (location_departure_id, tour_id)
             VALUES ($1, $2)`,
-        [departure_location_name, tour_id]
+        [location_departure_id, tour_id]
       );
 
       for (let i = 0; i < destination_locations.length; i++) {
         await pool.query(
-          `INSERT INTO destinationlocation (destination_location_name, tour_id)
+          `INSERT INTO destinationlocation (location_destination_id, tour_id)
               VALUES ($1, $2)`,
           [destination_locations[i], tour_id]
         );
@@ -999,10 +1075,10 @@ app.get("/list-tours/:business_id", async (req, res) => {
       t.created_at,
       t.vehicle,
       t.hotel,
-      dl.departure_location_name,
+      dl.location_departure_id,
       tc.name AS tourcategory_name,
       (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
-      array_agg(dsl.destination_location_name) AS destination_locations
+      array_agg(dsl.location_destination_id) AS destination_locations
     FROM
       tours t
     LEFT JOIN
@@ -1014,7 +1090,7 @@ app.get("/list-tours/:business_id", async (req, res) => {
     WHERE
       t.business_id = $1
     GROUP BY
-      t.tour_id, dl.departure_location_name, tc.name
+      t.tour_id, dl.location_departure_id, tc.name
   `;
 
   try {
@@ -1034,8 +1110,8 @@ app.get("/list-tours/:business_id", async (req, res) => {
 
 app.get("/list-tours-filter", async (req, res) => {
   const {
-    departure_location_name,
-    destination_location_name,
+    location_departure_id,
+    location_destination_id,
     tourcategory_name,
     name,
     min_adult_price,
@@ -1063,16 +1139,23 @@ app.get("/list-tours-filter", async (req, res) => {
       t.created_at,
       t.vehicle,
       t.hotel,
-      dl.departure_location_name,
+      dl.location_departure_id,
+       array_agg(dsl.location_destination_id) AS destination_locations,
+      ldep.location_name as departure_location_name,
+      array_agg(ldes.location_name) as destination_location_name,
       tc.name AS tourcategory_name,
-      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
-      array_agg(dsl.destination_location_name) AS destination_locations
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image
+     
     FROM
       tours t
     LEFT JOIN
       departurelocation dl ON t.tour_id = dl.tour_id
     LEFT JOIN
+      locations ldep ON dl.location_departure_id = ldep.location_id
+    LEFT JOIN
       destinationlocation dsl ON t.tour_id = dsl.tour_id
+     LEFT JOIN
+      locations ldes ON dsl.location_destination_id = ldes.location_id
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
     LEFT JOIN
@@ -1085,14 +1168,14 @@ app.get("/list-tours-filter", async (req, res) => {
 
   const params = [tourcategory_name];
 
-  if (departure_location_name) {
-    query += ` AND dl.departure_location_name = $${params.length + 1}`;
-    params.push(departure_location_name);
+  if (location_departure_id) {
+    query += ` AND dl.location_departure_id = $${params.length + 1}`;
+    params.push(location_departure_id);
   }
 
-  if (destination_location_name) {
-    query += ` AND dsl.destination_location_name = $${params.length + 1}`;
-    params.push(destination_location_name);
+  if (location_destination_id) {
+    query += ` AND dsl.location_destination_id = $${params.length + 1}`;
+    params.push(location_destination_id);
   }
 
   if (name) {
@@ -1132,7 +1215,7 @@ app.get("/list-tours-filter", async (req, res) => {
 
   query += `
     GROUP BY
-      t.tour_id, dl.departure_location_name, tc.name
+      t.tour_id, departure_location_name, dl.location_departure_id, tc.name
   `;
 
   try {
@@ -1155,16 +1238,20 @@ app.get("/get-tour/:tourId", async (req, res) => {
     const tourId = req.params.tourId;
 
     const tourQuery = await pool.query(
-      `SELECT t.*, a.name as account_name, dl.departure_location_name, array_agg(dst.destination_location_name) as destination_locations
+      `SELECT t.*, a.name as account_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
       FROM tours t
          LEFT JOIN
       business b ON t.business_id = b.business_id
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
       LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+       LEFT JOIN
+      locations ldep ON dl.location_departure_id = ldep.location_id
       LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
+      LEFT JOIN
+      locations ldes ON dst.location_destination_id = ldes.location_id
       WHERE t.tour_id = $1
-      GROUP BY t.tour_id, a.name, dl.departure_location_name`,
+      GROUP BY t.tour_id, a.name, departure_location_name, dl.location_departure_id`,
       [tourId]
     );
 
@@ -1220,7 +1307,7 @@ app.put(
         vehicle,
         hotel,
         tourcategory_id,
-        departure_location_name,
+        location_departure_id,
         destination_locations,
       } = req.body;
 
@@ -1267,9 +1354,9 @@ app.put(
 
       await pool.query(
         `UPDATE departurelocation
-        SET departure_location_name = $1
+        SET location_departure_id = $1
         WHERE tour_id = $2`,
-        [departure_location_name, tour_id]
+        [location_departure_id, tour_id]
       );
 
       await pool.query(`DELETE FROM destinationlocation WHERE tour_id = $1`, [
@@ -1278,7 +1365,7 @@ app.put(
 
       for (let i = 0; i < destination_locations.length; i++) {
         await pool.query(
-          `INSERT INTO destinationlocation (destination_location_name, tour_id)
+          `INSERT INTO destinationlocation (location_destination_id, tour_id)
               VALUES ($1, $2)`,
           [destination_locations[i], tour_id]
         );
@@ -1391,11 +1478,9 @@ app.post("/add-policy-cancellation", async (req, res) => {
   const { days_before_departure, refund_percentage } = req.body;
 
   if (days_before_departure == null || refund_percentage == null) {
-    return res
-      .status(400)
-      .json({
-        error: "Both days_before_departure and refund_percentage are required",
-      });
+    return res.status(400).json({
+      error: "Both days_before_departure and refund_percentage are required",
+    });
   }
 
   try {
@@ -1431,16 +1516,16 @@ app.get("/list-policies/:business_id?", async (req, res) => {
 
 app.delete("/delete-policy/:policyId", authenticateToken, async (req, res) => {
   const { policyId } = req.params;
-    const role = req.query.role;
-
+  const role = req.query.role;
 
   try {
-    let query="";
-    if(role==="3"){ query = `DELETE FROM policies WHERE policy_id = $1`;}
-    else{
-       query = `DELETE FROM policy_cancellation WHERE policy_id = $1`;
+    let query = "";
+    if (role === "3") {
+      query = `DELETE FROM policies WHERE policy_id = $1`;
+    } else {
+      query = `DELETE FROM policy_cancellation WHERE policy_id = $1`;
     }
-    
+
     await pool.query(query, [policyId]);
 
     res.status(204).send();
@@ -1454,15 +1539,13 @@ app.get("/policies/:policy_id", async (req, res) => {
   const role = req.query.role;
 
   try {
-    let query="";
-    if(role==="3"){
+    let query = "";
+    if (role === "3") {
       query = `SELECT * FROM policies WHERE policy_id = $1`;
-    }else{
+    } else {
       query = `SELECT * FROM policy_cancellation WHERE policy_id = $1`;
     }
-    const policiesResult = await pool.query(query,
-      [policy_id]
-    );
+    const policiesResult = await pool.query(query, [policy_id]);
 
     if (policiesResult.rows.length === 0) {
       return res.status(404).json({ error: "Policy not found" });
@@ -1476,30 +1559,29 @@ app.get("/policies/:policy_id", async (req, res) => {
   }
 });
 
-
 app.put("/policies/:policy_id", async (req, res) => {
   const { policy_id } = req.params;
-    const role = req.query.role;
+  const role = req.query.role;
   const { policytype, description, days_before_departure, refund_percentage } =
     req.body;
 
   try {
-    let query="";
-    if(role === "3"){
+    let query = "";
+    if (role === "3") {
       query = `UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *`;
       var policiesUpdate = await pool.query(query, [
         policytype,
         description,
         policy_id,
       ]);
-    }else{
-       query = `UPDATE policy_cancellation SET days_before_departure = $1, refund_percentage = $2 WHERE policy_id = $3 RETURNING *`;
-       var policiesUpdate = await pool.query(query, [
-        days_before_departure, refund_percentage,
-         policy_id,
-       ]);
+    } else {
+      query = `UPDATE policy_cancellation SET days_before_departure = $1, refund_percentage = $2 WHERE policy_id = $3 RETURNING *`;
+      var policiesUpdate = await pool.query(query, [
+        days_before_departure,
+        refund_percentage,
+        policy_id,
+      ]);
     }
-    
 
     if (policiesUpdate.rows.length === 0) {
       return res.status(404).json({ error: "Policy not found" });
@@ -1710,7 +1792,7 @@ app.put(
     }
   }
 );
-const getPendingCount = async (table,status, res) => {
+const getPendingCount = async (table, status, res) => {
   try {
     const client = await pool.connect();
     const result = await client.query(
@@ -1726,7 +1808,7 @@ const getPendingCount = async (table,status, res) => {
   }
 };
 app.get("/pending-count-status-contact", (req, res) => {
-  getPendingCount("contacts","Pending", res);
+  getPendingCount("contacts", "Pending", res);
 });
 
 app.get("/pending-count-status-report", (req, res) => {
@@ -1778,7 +1860,7 @@ app.get("/coupons/:customerId", async (req, res) => {
 
 app.post("/daily-checkin/:customerId", async (req, res) => {
   const customerId = req.params.customerId;
-const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
+  const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
 
   try {
     const checkinQuery = `
@@ -1791,7 +1873,11 @@ const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
     ]);
 
     if (checkinResult.rows.length > 0) {
-      return res.status(400).json({ message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !" });
+      return res
+        .status(400)
+        .json({
+          message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !",
+        });
     }
 
     const insertCheckinQuery = `
@@ -1809,7 +1895,7 @@ const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
     const createAt = new Date().toISOString();
     const expiresAt = new Date(
       new Date().setDate(new Date().getDate() + 30)
-    ).toISOString(); 
+    ).toISOString();
     const isUsed = "Unused";
 
     await pool.query(insertCouponQuery, [
