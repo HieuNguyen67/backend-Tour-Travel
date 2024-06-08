@@ -308,6 +308,95 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+app.post("/register-admin", authenticateToken, async (req, res) => {
+  const {
+    username,
+    password,
+    name,
+    birth_of_date,
+    phone_number,
+    address,
+    email,
+    role,
+  } = req.body;
+
+  try {
+   
+    const checkExistingQuery =
+      "SELECT * FROM accounts WHERE username = $1 OR email = $2";
+    const existingResult = await pool.query(checkExistingQuery, [
+      username,
+      email,
+    ]);
+    if (existingResult.rows.length > 0) {
+      return res
+        .status(400)
+        .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
+    }
+
+    const checkRoleExistQuery = "SELECT * FROM accounts WHERE role_id = $1";
+    const roleExistResult = await pool.query(checkRoleExistQuery, [role]);
+    if (roleExistResult.rows.length > 0) {
+      return res.status(400).json({ message: "Đã có tài khoản thuộc quyền này quản lý này !" });
+    }
+
+    const passwordHash = bcrypt.hashSync(password, 10);
+
+    const accountQuery =
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
+    const confirmationCode = generateRandomCode(5);
+    const accountResult = await pool.query(accountQuery, [
+      username,
+      passwordHash,
+      role,
+      "Inactive",
+      confirmationCode,
+      "unused",
+      name,
+      birth_of_date,
+      phone_number,
+      address,
+      email,
+    ]);
+
+    const account = accountResult.rows[0];
+
+    const businessQuery =
+      "INSERT INTO admin (account_id) VALUES ($1) RETURNING *";
+    await pool.query(businessQuery, [account.account_id]);
+
+    const confirmationLink = `http://localhost:3000/confirm`;
+
+    const mailOptions = {
+      from: "Tour Travel",
+      to: email,
+      subject: "Yêu Cầu Kích Hoạt Tài Khoản",
+      html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
+            Chúng tôi hy vọng rằng bạn đang có một ngày tốt lành. Chúng tôi xin gửi email này để nhắc nhở về việc kích hoạt tài khoản của bạn trên hệ thống của chúng tôi.<br/>
+            Tài khoản của bạn đã được tạo sẵn trên nền tảng của chúng tôi, nhưng hiện tại nó vẫn chưa được kích hoạt. Để tiếp tục trải nghiệm các tính năng và dịch vụ mà chúng tôi cung cấp, chúng tôi rất mong bạn có thể hoàn tất quá trình kích hoạt.<br/>
+            Vui lòng truy cập ${confirmationLink} và làm theo hướng dẫn để hoàn tất quá trình kích hoạt tài khoản của bạn. Nếu bạn gặp bất kỳ vấn đề hoặc cần sự trợ giúp, đừng ngần ngại liên hệ với chúng tôi thông qua email này .<br/>
+            Chúng tôi trân trọng sự hợp tác của bạn và mong nhận được phản hồi từ bạn trong thời gian sớm nhất.<br/>
+            Trân trọng,<br/>
+            Tour Travel<br/>
+            Admin`,
+    };
+
+    transporter.sendMail(mailOptions, function (error, info) {
+      if (error) {
+        console.log("Gửi email không thành công:", error);
+      } else {
+        console.log("Email xác nhận đã được gửi: " + info.response);
+      }
+    });
+    res.json({ message: "Đăng ký thành công!" });
+  } catch (error) {
+    console.error("Đăng ký không thành công:", error);
+    res
+      .status(500)
+      .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
+  }
+});
+
 
 app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
@@ -335,8 +424,9 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
       `;
     } else {
       query = `
-        SELECT a.username, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email
+        SELECT a.username,r.role_name,a.account_id, a.status, a.name, a.birth_of_date, a.phone_number, a.address, a.email
         FROM accounts a
+         LEFT JOIN role r ON a.role_id = r.role_id
         WHERE a.account_id = $1
       `;
     }
@@ -538,6 +628,35 @@ app.get("/get-users", async (req, res) => {
   } catch (error) {
     console.error("Lỗi khi lấy danh sách người dùng:", error);
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+  }
+});
+app.get("/get-admins",authenticateToken, async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        a.name,
+        a.status,
+        a.birth_of_date,
+        a.phone_number,
+        a.address,
+        a.email,
+        a.role_id,
+        a.account_id,
+        a.username,
+        r.role_name
+      FROM 
+        admin ad
+      JOIN 
+        accounts a ON ad.account_id = a.account_id
+      JOIN 
+        role r ON a.role_id = r.role_id
+    `;
+
+    const result = await pool.query(query);
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching admins:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
