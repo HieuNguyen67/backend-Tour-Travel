@@ -1804,8 +1804,9 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-app.post("/add-policy-cancellation", async (req, res) => {
+app.post("/add-policy-cancellation/:businessId", async (req, res) => {
   const { days_before_departure, refund_percentage } = req.body;
+  const { businessId } = req.params;
 
   if (days_before_departure == null || refund_percentage == null) {
     return res.status(400).json({
@@ -1815,8 +1816,8 @@ app.post("/add-policy-cancellation", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "INSERT INTO policy_cancellation (days_before_departure, refund_percentage) VALUES ($1, $2) RETURNING *",
-      [days_before_departure, refund_percentage]
+      "INSERT INTO policy_cancellation (days_before_departure, refund_percentage, business_id) VALUES ($1, $2, $3) RETURNING *",
+      [days_before_departure, refund_percentage, businessId]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -1825,17 +1826,27 @@ app.post("/add-policy-cancellation", async (req, res) => {
   }
 });
 
-app.get("/list-policies/:business_id?", async (req, res) => {
+app.get("/list-policies/:business_id", async (req, res) => {
   const { business_id } = req.params;
 
   try {
-    let query;
-    if (business_id) {
-      query = `SELECT * FROM policies WHERE business_id = $1`;
-    } else {
-      query = `SELECT * FROM policy_cancellation `;
-    }
-    const result = await pool.query(query, business_id ? [business_id] : []);
+    let query = `SELECT * FROM policies WHERE business_id = $1`;
+    
+    const result = await pool.query(query, [business_id]);
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error("Error fetching policies:", error.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+app.get("/list-policies-cancellation/:business_id", async (req, res) => {
+  const { business_id } = req.params;
+
+  try {
+    let query = `SELECT * FROM policy_cancellation WHERE business_id = $1`;
+    
+    const result = await pool.query(query, [business_id]);
 
     res.json(result.rows);
   } catch (error) {
