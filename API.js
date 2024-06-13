@@ -122,33 +122,6 @@ app.post("/register", async (req, res) => {
   } = req.body;
 
   try {
-     const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 4 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-     let adminResult = await pool.query(adminQueryRole);
-
-     if (adminResult.rows.length === 0) {
-       const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-       adminResult = await pool.query(adminQueryRole2);
-
-       if (adminResult.rows.length === 0) {
-         return res.status(403).json({ error: "No admin found" });
-       }
-     }
-
-     const admin_id = adminResult.rows[0].admin_id;
-
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -164,7 +137,7 @@ app.post("/register", async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, admin_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -178,7 +151,6 @@ app.post("/register", async (req, res) => {
       phone_number,
       address,
       email,
-      admin_id,
     ]);
 
     const account = accountResult.rows[0];
@@ -219,7 +191,6 @@ app.post("/register", async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
-
 //-----------------------------------------------
 app.get("/confirm/:confirmationCode", async (req, res) => {
   const confirmationCode = req.params.confirmationCode;
@@ -268,33 +239,6 @@ app.post("/register-business", authenticateToken, async (req, res) => {
   } = req.body;
 
   try {
-     const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 4 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-     let adminResult = await pool.query(adminQueryRole);
-
-     if (adminResult.rows.length === 0) {
-       const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-       adminResult = await pool.query(adminQueryRole2);
-
-       if (adminResult.rows.length === 0) {
-         return res.status(403).json({ error: "No admin found" });
-       }
-     }
-
-     const admin_id = adminResult.rows[0].admin_id;
-
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -310,7 +254,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, admin_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -324,7 +268,6 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       phone_number,
       address,
       email,
-      admin_id
     ]);
 
     const account = accountResult.rows[0];
@@ -364,6 +307,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
+
 app.post("/register-admin", authenticateToken, async (req, res) => {
   const {
     username,
@@ -377,32 +321,7 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
   } = req.body;
 
   try {
-     const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 4 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-     let adminResult = await pool.query(adminQueryRole);
-
-     if (adminResult.rows.length === 0) {
-       const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-       adminResult = await pool.query(adminQueryRole2);
-
-       if (adminResult.rows.length === 0) {
-         return res.status(403).json({ error: "No admin found" });
-       }
-     }
-
-     const admin_id = adminResult.rows[0].admin_id;
+    
    
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
@@ -425,7 +344,7 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
     const passwordHash = bcrypt.hashSync(password, 10);
 
     const accountQuery =
-      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email, admin_id) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING *";
+      "INSERT INTO accounts (username, password, role_id, status, confirmation_code, use_confirmation_code, name, birth_of_date, phone_number, address, email) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING *";
     const confirmationCode = generateRandomCode(5);
     const accountResult = await pool.query(accountQuery, [
       username,
@@ -439,7 +358,6 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
       phone_number,
       address,
       email,
-      admin_id,
     ]);
 
     const account = accountResult.rows[0];
@@ -822,45 +740,15 @@ app.post(
     const { title, content, newscategory_id } = req.body;
 
     try {
-     const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 5 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-     let adminResult = await pool.query(adminQueryRole);
-
-     if (adminResult.rows.length === 0) {
-       const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-       adminResult = await pool.query(adminQueryRole2);
-
-       if (adminResult.rows.length === 0) {
-         return res
-           .status(403)
-           .json({ error: "No admin found" });
-       }
-     }
-
-     const admin_id = adminResult.rows[0].admin_id;
-
-      
 
       let query="";
       if(role=== "3"){
-        query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_business, created_at, status, posted_by_type, admin_id)
-      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business', $5)
+        query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_business, created_at, status, posted_by_type)
+      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business')
       RETURNING news_id`;
       }else{
-         query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_admin, created_at, status, posted_by_type, admin_id)
-      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin', $5)
+         query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_admin, created_at, status, posted_by_type)
+      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin')
       RETURNING news_id`;
       }
       
@@ -869,7 +757,6 @@ app.post(
         content,
         newscategory_id,
         accountId,
-        admin_id,
       ];
       const newsInsertResult = await pool.query(
         query,
@@ -1114,38 +1001,13 @@ app.post("/send-contact", async (req, res) => {
   const { fullname, email, phonenumber, message, address } = req.body;
 
   try {
-    const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 6 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-    let adminResult = await pool.query(adminQueryRole);
-
-    if (adminResult.rows.length === 0) {
-      const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-      adminResult = await pool.query(adminQueryRole2);
-
-      if (adminResult.rows.length === 0) {
-        return res.status(403).json({ error: "No admin found" });
-      }
-    }
-
-    const admin_id = adminResult.rows[0].admin_id;
+   
 
     const query = `
-      INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status, admin_id)
-      VALUES ($1, $2, $3, $4, NOW(), $5, 'Pending', $6)
+      INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status)
+      VALUES ($1, $2, $3, $4, NOW(), $5, 'Pending')
     `;
-    await pool.query(query, [fullname, email, phonenumber, message, address,admin_id]);
+    await pool.query(query, [fullname, email, phonenumber, message, address]);
 
     res.status(201).json({ message: "Gửi thông tin liên hệ thành công !" });
   } catch (error) {
@@ -2020,39 +1882,13 @@ app.post("/report-tour/:tourId/:customerId", async (req, res) => {
   const { type_report, description } = req.body;
 
   try {
-     const adminQueryRole = `
-  SELECT a.admin_id
-  FROM admin a
-  JOIN accounts acc ON a.account_id = acc.account_id
-  WHERE acc.role_id = 6 AND acc.status = 'Active'
-  LIMIT 1
-`;
-
-     let adminResult = await pool.query(adminQueryRole);
-
-     if (adminResult.rows.length === 0) {
-       const adminQueryRole2 = `
-    SELECT a.admin_id
-    FROM admin a
-    JOIN accounts acc ON a.account_id = acc.account_id
-    WHERE acc.role_id = 2 AND acc.status = 'Active'
-    LIMIT 1
-  `;
-       adminResult = await pool.query(adminQueryRole2);
-
-       if (adminResult.rows.length === 0) {
-         return res.status(403).json({ error: "No admin found" });
-       }
-     }
-
-     const admin_id = adminResult.rows[0].admin_id;
-
+     
     
     const query = `
-      INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status, admin_id)
-      VALUES ($1, $2, NOW(), $3, $4, 'Pending', $5)
+      INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status)
+      VALUES ($1, $2, NOW(), $3, $4, 'Pending')
     `;
-    const values = [tourId, customerId, type_report, description, admin_id];
+    const values = [tourId, customerId, type_report, description];
     const result = await pool.query(query, values);
 
     res.status(200).json({ message: "Report tour successful" });
