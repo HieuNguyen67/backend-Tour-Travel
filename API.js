@@ -519,64 +519,49 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
-app.put(
-  "/update-status-accounts/:accountId/:adminId",
-  authenticateToken,
-  async (req, res) => {
-    const { accountId, adminId } = req.params;
-    const { status, note } = req.body;
+app.put("/update-status-accounts/:accountId/:adminId", authenticateToken, async (req, res) => {
+  const { accountId, adminId } = req.params;
+  const { status, note } = req.body; 
 
-    try {
-      const roleQuery = `
-        SELECT role_id
-        FROM accounts
-        WHERE account_id = $1
-      `;
-      const roleResult = await pool.query(roleQuery, [accountId]);
+  try {
+    await pool.query("BEGIN");
 
-      if (roleResult.rows.length === 0) {
-        return res.status(404).json({ message: "Không tìm thấy tài khoản" });
-      }
+    const updateAccountStatusQuery = `
+      UPDATE accounts 
+      SET status = $1 , note = $2
+      WHERE account_id = $3
+    `;
+    await pool.query(updateAccountStatusQuery, [status, note, accountId]);
 
-      const roleId = roleResult.rows[0].role_id;
+    const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+    const action = "Cập nhật trạng thái tài khoản !";
+    const actionTime = new Date().toISOString();
+    const objectType = "accounts";
 
-      if (status !== "Inactive") {
-        const adminCheckQuery = `
-          SELECT a.admin_id
-          FROM admin a
-          JOIN accounts acc ON a.account_id = acc.account_id
-          WHERE acc.role_id = $1 AND acc.status = 'Active'
-        `;
-        const adminCheckResult = await pool.query(adminCheckQuery, [roleId]);
+    await pool.query(insertAdminActionQuery, [
+      adminId,
+      accountId,
+      action,
+      actionTime,
+      objectType,
+    ]);
 
-        if (adminCheckResult.rows.length > 0) {
-          return res.status(403).json({
-            message: "Đã có quản trị viên đang hoạt động thuộc quyền này !",
-          });
-        }
-      }
+    await pool.query("COMMIT");
 
-      const updateQuery = `
-        UPDATE accounts 
-        SET status = $1, note = $2, admin_id = $3
-        WHERE account_id = $4
-      `;
-      await pool.query(updateQuery, [status, note, adminId, accountId]);
-
-      res.status(200).json({
-        message: "Cập nhật trạng thái và ghi chú của tài khoản thành công",
+    res
+      .status(200)
+      .json({
+        message: "Cập nhật tài khoản thành công !",
       });
-    } catch (error) {
-      console.error(
-        "Không thể cập nhật trạng thái và ghi chú của tài khoản:",
-        error
-      );
-      res.status(500).json({
-        message: "Không thể cập nhật trạng thái và ghi chú của tài khoản",
-      });
-    }
+  } catch (error) {
+    await pool.query("ROLLBACK");
+    console.error("Lỗi khi cập nhật tài khoản:", error);
+    res.status(500).json({ error: "Internal server error" });
   }
-);
+});
 
 app.put("/account/change-password/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
