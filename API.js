@@ -227,7 +227,7 @@ app.get("/confirm/:confirmationCode", async (req, res) => {
 });
 
 //-----------------------------------------------
-app.post("/register-business", authenticateToken, async (req, res) => {
+app.post("/register-business/:adminId", authenticateToken, async (req, res) => {
   const {
     username,
     password,
@@ -237,6 +237,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
     address,
     email,
   } = req.body;
+  const adminId = req.params.adminId;
 
   try {
     const checkExistingQuery =
@@ -299,6 +300,23 @@ app.post("/register-business", authenticateToken, async (req, res) => {
         console.log("Email xác nhận đã được gửi: " + info.response);
       }
     });
+
+    const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+    const action = "Đăng ký tài khoản doanh nghiệp !";
+    const actionTime = new Date().toISOString();
+    const objectType = "accounts";
+
+    await pool.query(insertAdminActionQuery, [
+      adminId,
+      account.account_id,
+      action,
+      actionTime,
+      objectType,
+    ]);
+
     res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
@@ -308,7 +326,7 @@ app.post("/register-business", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/register-admin", authenticateToken, async (req, res) => {
+app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
   const {
     username,
     password,
@@ -319,10 +337,9 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
     email,
     role,
   } = req.body;
+  const adminId = req.params.adminId;
 
   try {
-    
-   
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -335,10 +352,16 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
         .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
     }
 
-    const checkRoleExistQuery = "SELECT * FROM accounts WHERE role_id = $1 and status= 'Active'";
+    const checkRoleExistQuery =
+      "SELECT * FROM accounts WHERE role_id = $1 and status= 'Active'";
     const roleExistResult = await pool.query(checkRoleExistQuery, [role]);
     if (roleExistResult.rows.length > 0) {
-      return res.status(400).json({ message: "Đã có quản trị viên thuộc quyền này quản lý này. Vui lòng khoá tài khoản cũ để tạo mới!" });
+      return res
+        .status(400)
+        .json({
+          message:
+            "Đã có quản trị viên thuộc quyền này quản lý này. Vui lòng khoá tài khoản cũ để tạo mới!",
+        });
     }
 
     const passwordHash = bcrypt.hashSync(password, 10);
@@ -389,6 +412,23 @@ app.post("/register-admin", authenticateToken, async (req, res) => {
         console.log("Email xác nhận đã được gửi: " + info.response);
       }
     });
+
+    const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+    const action = "Đăng ký tài khoản quản trị viên !";
+    const actionTime = new Date().toISOString();
+    const objectType = "accounts";
+
+    await pool.query(insertAdminActionQuery, [
+      adminId,
+      account.account_id,
+      action,
+      actionTime,
+      objectType,
+    ]);
+
     res.json({ message: "Đăng ký thành công!" });
   } catch (error) {
     console.error("Đăng ký không thành công:", error);
@@ -715,50 +755,55 @@ app.get("/news-categories", authenticateToken, async (req, res) => {
 });
 
 app.post(
-  "/add-news/:account_id",
+  "/add-news/:account_id/:adminId?",
   authenticateToken,
   upload.single("image"),
   async (req, res) => {
-    const role = req.query.role;
     const accountId = req.params.account_id;
-
+    const adminId = req.params.adminId;
     const { title, content, newscategory_id } = req.body;
 
     try {
-
-      let query="";
-      if(role=== "3"){
-        query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_business, created_at, status, posted_by_type)
-      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business')
-      RETURNING news_id`;
-      }else{
-         query = ` INSERT INTO News (title, content, newscategory_id, posted_by_id_admin, created_at, status, posted_by_type)
-      VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin')
-      RETURNING news_id`;
+      let query = "";
+      if (req.query.role === "3") {
+        query = `
+          INSERT INTO news (title, content, newscategory_id, posted_by_id_business, created_at, status, posted_by_type)
+          VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business')
+          RETURNING news_id`;
+      } else {
+        query = `
+          INSERT INTO news (title, content, newscategory_id, posted_by_id_admin, created_at, status, posted_by_type)
+          VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin')
+          RETURNING news_id`;
       }
-      
-      const newsInsertValues = [
-        title,
-        content,
-        newscategory_id,
-        accountId,
-      ];
-      const newsInsertResult = await pool.query(
-        query,
-        newsInsertValues
-      );
 
+      const newsInsertValues = [title, content, newscategory_id, accountId];
+      const newsInsertResult = await pool.query(query, newsInsertValues);
       const newsId = newsInsertResult.rows[0].news_id;
 
       let imageInserted = false;
-
       if (req.file) {
         const imageInsertQuery = `
-        UPDATE News SET image=$1 where news_id=$2
-      `;
+          UPDATE news SET image = $1 WHERE news_id = $2
+        `;
         await pool.query(imageInsertQuery, [req.file.buffer, newsId]);
         imageInserted = true;
       }
+
+      if(adminId){
+        const adminActionQuery = `
+        INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type)
+        VALUES ($1, $2, $3, NOW(), $4)
+      `;
+        await pool.query(adminActionQuery, [
+          adminId,
+          newsId,
+          "Thêm bài đăng tin tức",
+          "news",
+        ]);
+
+      }
+      
 
       if (imageInserted) {
         res
@@ -876,19 +921,41 @@ app.get("/news-detail/:newsId", async (req, res) => {
   }
 });
 
-app.delete("/delete-news/:newsId", authenticateToken, async (req, res) => {
-  const { newsId } = req.params;
+app.delete(
+  "/delete-news/:newsId/:adminId?",
+  authenticateToken,
+  async (req, res) => {
+    const { newsId, adminId } = req.params;
 
-  try {
-    const query = "DELETE FROM news WHERE news_id = $1";
-    await pool.query(query, [newsId]);
+    try {
+      const deleteQuery = "DELETE FROM news WHERE news_id = $1";
+      await pool.query(deleteQuery, [newsId]);
 
-    res.status(204).send();
-  } catch (error) {
-    console.error("Failed to delete news:", error);
-    res.status(500).json({ message: "Failed to delete news" });
+      if(adminId){
+        const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+       const action = "Xoá bài đăng tin tức !";
+       const actionTime = new Date().toISOString();
+       const objectType = "news";
+
+       await pool.query(insertAdminActionQuery, [
+         adminId,
+         newsId,
+         action,
+         actionTime,
+         objectType,
+       ]);
+
+      }
+      res.status(204).send();
+    } catch (error) {
+      console.error("Failed to delete news:", error);
+      res.status(500).json({ message: "Failed to delete news" });
+    }
   }
-});
+);
 app.get("/select-status-note/:newsId", authenticateToken, async (req, res) => {
   const { newsId } = req.params;
 
@@ -913,10 +980,26 @@ app.put(
     try {
       const query = `
       UPDATE news 
-      SET status = $1, note = $2 ,  admin_id = $3
-      WHERE news_id = $4
+      SET status = $1, note = $2
+      WHERE news_id = $3
     `;
-      await pool.query(query, [status, note, adminId, newsId]);
+      await pool.query(query, [status, note, newsId]);
+
+      const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+      const action = "Cập nhật trạng thái bài đăng tin tức !";
+      const actionTime = new Date().toISOString();
+      const objectType = "news";
+
+      await pool.query(insertAdminActionQuery, [
+        adminId,
+        newsId,
+        action,
+        actionTime,
+        objectType,
+      ]);
 
       res
         .status(200)
@@ -1093,18 +1176,35 @@ app.put(
     try {
       const query = `
       UPDATE contacts 
-      SET status = $1, admin_id= $2
-      WHERE contact_id = $3
+      SET status = $1
+      WHERE contact_id = $2
     `;
-      await pool.query(query, [status, adminId, contactId]);
+      await pool.query(query, [status, contactId]);
 
-      res.status(200).json({ message: "News status updated successfully" });
+      const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+      const action = "Cập nhật trạng thái liên hệ !";
+      const actionTime = new Date().toISOString();
+      const objectType = "contacts";
+
+      await pool.query(insertAdminActionQuery, [
+        adminId,
+        contactId,
+        action,
+        actionTime,
+        objectType,
+      ]);
+
+      res.status(200).json({ message: "Contact status updated successfully" });
     } catch (error) {
-      console.error("Failed to update news status:", error);
-      res.status(500).json({ message: "Failed to update news status " });
+      console.error("Failed to update contact status:", error);
+      res.status(500).json({ message: "Failed to update contact status" });
     }
   }
 );
+
 app.put(
   "/update-status-contact-business/:contactId",
   authenticateToken,
@@ -1970,10 +2070,26 @@ app.put(
     try {
       const query = `
       UPDATE tour_reports 
-      SET status = $1, admin_id=$2
-      WHERE report_id = $3
+      SET status = $1
+      WHERE report_id = $2
     `;
-      await pool.query(query, [status, adminId, reportId]);
+      await pool.query(query, [status, reportId]);
+
+      const insertAdminActionQuery = `
+      INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
+      VALUES ($1, $2, $3, $4, $5)
+    `;
+      const action = 'Cập nhật trạng thái báo cáo tour !';
+      const actionTime = new Date().toISOString();
+      const objectType = 'tour_reports';
+
+      await pool.query(insertAdminActionQuery, [
+        adminId,
+        reportId,
+        action,
+        actionTime,
+        objectType,
+      ]);
 
       res.status(200).json({ message: "Report status updated successfully" });
     } catch (error) {
@@ -1982,6 +2098,7 @@ app.put(
     }
   }
 );
+
 const getPendingCount = async (table, status, res) => {
   try {
     const client = await pool.connect();
