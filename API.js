@@ -93,7 +93,7 @@ function authenticateToken(req, res, next) {
 }
 function generateRandomCode(length) {
   let result = "";
-  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const characters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
   const charactersLength = characters.length;
   for (let i = 0; i < length; i++) {
     result += characters.charAt(Math.floor(Math.random() * charactersLength));
@@ -798,7 +798,7 @@ app.post(
         await pool.query(adminActionQuery, [
           adminId,
           newsId,
-          "Thêm bài đăng tin tức",
+          "Thêm bài đăng tin tức !",
           "news",
         ]);
 
@@ -2222,6 +2222,111 @@ app.post("/daily-checkin/:customerId", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
+app.get("/list-admin-actions", async (req, res) => {
+  try {
+    const query = `
+      SELECT 
+        a.name AS admin_name,
+        aa.object_id,
+        aa.admin_action_id,
+        CASE
+        WHEN aa.object_type = 'news' THEN n.title
+          WHEN aa.object_type = 'accounts' THEN ac.name
+          
+          ELSE NULL
+        END AS object_name,
+        aa.action,
+        aa.action_time
+      FROM 
+        admin_actions aa
+      JOIN 
+        admin ad ON aa.admin_id = ad.admin_id
+      JOIN 
+        accounts a ON ad.account_id = a.account_id
+      LEFT JOIN 
+        accounts ac ON aa.object_type = 'accounts' AND aa.object_id = ac.account_id
+      LEFT JOIN 
+        news n ON aa.object_type = 'news' AND aa.object_id = n.news_id
+      ORDER BY 
+        aa.action_time DESC
+    `;
+
+    const result = await pool.query(query);
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("Failed to retrieve admin actions:", error);
+    res.status(500).json({ message: "Failed to retrieve admin actions" });
+  }
+});
+
+app.post(
+  "/book-tour/:tourId/:customerId",authenticateToken,
+  async (req, res) => {
+    const { tourId, customerId } = req.params;
+    const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
+
+    try {
+      const tourQuery = `
+      SELECT * FROM tours WHERE tour_id = $1
+    `;
+      const tourResult = await pool.query(tourQuery, [tourId]);
+
+      if (tourResult.rows.length === 0) {
+        return res.status(404).json({ message: "Tour không tồn tại" });
+      }
+
+      const tour = tourResult.rows[0];
+      const total_price =
+        tour.adult_price * adult_quantity +
+        tour.child_price * child_quantity +
+        tour.infant_price * infant_quantity;
+
+      const orderQuery = `
+      INSERT INTO orders (
+        tour_id, 
+        adult_quantity, 
+        child_quantity, 
+        infant_quantity, 
+        total_price, 
+        status_payment, 
+        booking_date_time, 
+        note, 
+        customer_id, 
+        business_id, 
+        code_order, 
+        status, 
+        status_rating
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', NOW(), $6, $7, $8, $9, 'Pending', 'Not Rated') RETURNING *
+    `;
+
+      const code_order = generateRandomCode(10);
+
+      const orderResult = await pool.query(orderQuery, [
+        tourId,
+        adult_quantity,
+        child_quantity,
+        infant_quantity,
+        total_price,
+        note,
+        customerId,
+        tour.business_id,
+        code_order,
+      ]);
+
+      res.status(201).json({
+        message: "Quý khách đã đặt tour thành công !",
+        order: orderResult.rows[0],
+      });
+    } catch (error) {
+      console.error("Đặt tour không thành công:", error);
+      res
+        .status(500)
+        .json({ message: "Đặt tour không thành công. Vui lòng thử lại sau." });
+    }
+  }
+);
 
 // -----------------------------------------------
 module.exports = app;
