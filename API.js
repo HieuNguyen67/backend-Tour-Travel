@@ -2131,6 +2131,9 @@ app.get("/pending-count-status-tour", (req, res) => {
 app.get("/pending-count-status-contact-business", (req, res) => {
   getPendingCount("contacts_business", "Pending", res);
 });
+app.get("/pending-count-status-orders", (req, res) => {
+  getPendingCount("orders", "Pending", res);
+});
 
 app.get("/coupons/:customerId", async (req, res) => {
   const customerId = req.params.customerId;
@@ -2262,15 +2265,14 @@ app.get("/list-admin-actions", async (req, res) => {
 });
 
 app.post(
-  "/book-tour/:tourId/:customerId",authenticateToken,
+  "/book-tour/:tourId/:customerId",
+  authenticateToken,
   async (req, res) => {
     const { tourId, customerId } = req.params;
     const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
 
     try {
-      const tourQuery = `
-      SELECT * FROM tours WHERE tour_id = $1
-    `;
+      const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
       const tourResult = await pool.query(tourQuery, [tourId]);
 
       if (tourResult.rows.length === 0) {
@@ -2278,6 +2280,12 @@ app.post(
       }
 
       const tour = tourResult.rows[0];
+      const total_quantity = adult_quantity + child_quantity + infant_quantity;
+
+      if (tour.quantity < total_quantity) {
+        return res.status(400).json({ message: "Số lượng không đủ" });
+      }
+
       const total_price =
         tour.adult_price * adult_quantity +
         tour.child_price * child_quantity +
@@ -2315,15 +2323,237 @@ app.post(
         code_order,
       ]);
 
+      const updateTourQuery = `
+      UPDATE tours 
+      SET quantity = quantity - $1 
+      WHERE tour_id = $2
+    `;
+      await pool.query(updateTourQuery, [total_quantity, tourId]);
+
       res.status(201).json({
-        message: "Quý khách đã đặt tour thành công !",
+        message: "Quý khách đã đặt tour thành công!",
         order: orderResult.rows[0],
       });
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
-      res
-        .status(500)
-        .json({ message: "Đặt tour không thành công. Vui lòng thử lại sau." });
+      res.status(500).json({
+        message: "Đặt tour không thành công. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+app.get(
+  "/list-orders-customer/:customerId/:status?",
+  authenticateToken,
+  async (req, res) => {
+    const { customerId, status } = req.params;
+
+    try {
+      let ordersQuery;
+      const params = [];
+      if (status) {
+        ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.customer_id = $1 AND o.status = $2
+      ORDER BY o.booking_date_time DESC
+
+    `;
+        params.push(customerId, status);
+      } else {
+        ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.customer_id = $1
+      ORDER BY o.booking_date_time DESC
+ 
+    `;
+        params.push(customerId);
+      }
+
+      const ordersResult = await pool.query(ordersQuery, params);
+
+      if (ordersResult.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+      }
+
+      res.status(200).json(ordersResult.rows);
+    } catch (error) {
+      console.error("Lỗi khi lấy danh sách đơn hàng:", error);
+      res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
+    }
+  }
+);
+app.get(
+  "/list-orders-business/:businessId/:status?",
+  authenticateToken,
+  async (req, res) => {
+    const { businessId, status } = req.params;
+
+    try {
+      let ordersQuery;
+      const params = [];
+      if (status) {
+        ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.business_id = $1 AND o.status = $2
+      ORDER BY o.booking_date_time DESC
+
+    `;
+        params.push(businessId, status);
+      } else {
+        ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.business_id = $1
+      ORDER BY o.booking_date_time DESC
+ 
+    `;
+        params.push(businessId);
+      }
+
+      const ordersResult = await pool.query(ordersQuery, params);
+
+      if (ordersResult.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+      }
+
+      res.status(200).json(ordersResult.rows);
+    } catch (error) {
+      console.error("Lỗi khi lấy danh sách đơn hàng:", error);
+      res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
+    }
+  }
+);
+app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    const orderDetailQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        c.account_id,
+        a.name AS customer_name,
+        a.phone_number,
+        a.email,
+        a.address,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      JOIN accounts a ON c.account_id = a.account_id
+      WHERE o.order_id = $1
+    `;
+
+    const orderDetailResult = await pool.query(orderDetailQuery, [orderId]);
+
+    if (orderDetailResult.rows.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+    }
+
+    res.status(200).json(orderDetailResult.rows[0]);
+  } catch (error) {
+    console.error("Lỗi khi lấy chi tiết đơn hàng:", error);
+    res.status(500).json({ message: "Lỗi khi lấy chi tiết đơn hàng" });
+  }
+});
+app.put(
+  "/update-status-orders/:orderId",
+  authenticateToken,
+  async (req, res) => {
+    const { orderId } = req.params;
+    const { status } = req.body;
+
+    try {
+      const query = `
+      UPDATE orders 
+      SET status = $1
+      WHERE order_id = $2
+    `;
+      await pool.query(query, [status, orderId]);
+
+      res.status(200).json({ message: "Order status updated successfully" });
+    } catch (error) {
+      console.error("Failed to update Order status:", error);
+      res.status(500).json({ message: "Failed to update Order status " });
     }
   }
 );
