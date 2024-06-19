@@ -69,7 +69,7 @@ app.post("/login", async (req, res) => {
       account_id: account.account_id,
       business_id: account.business_id,
       customer_id: account.customer_id,
-      admin_id: account.admin_id
+      admin_id: account.admin_id,
     });
   } catch (error) {
     console.error("Đăng nhập không thành công:", error);
@@ -162,7 +162,7 @@ app.post("/register", async (req, res) => {
     const confirmationLink = `http://localhost:3000/confirm`;
 
     const mailOptions = {
-      from: "Tour Travel",
+      from: "Tour Travel <your-email@gmail.com>",
       to: email,
       subject: "Yêu Cầu Kích Hoạt Tài Khoản",
       html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
@@ -280,7 +280,7 @@ app.post("/register-business/:adminId", authenticateToken, async (req, res) => {
     const confirmationLink = `http://localhost:3000/confirm`;
 
     const mailOptions = {
-      from: "Tour Travel",
+      from: "Tour Travel <your-email@gmail.com>",
       to: email,
       subject: "Yêu Cầu Kích Hoạt Tài Khoản",
       html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
@@ -356,12 +356,10 @@ app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
       "SELECT * FROM accounts WHERE role_id = $1 and status= 'Active'";
     const roleExistResult = await pool.query(checkRoleExistQuery, [role]);
     if (roleExistResult.rows.length > 0) {
-      return res
-        .status(400)
-        .json({
-          message:
-            "Đã có quản trị viên thuộc quyền này quản lý này. Vui lòng khoá tài khoản cũ để tạo mới!",
-        });
+      return res.status(400).json({
+        message:
+          "Đã có quản trị viên thuộc quyền này quản lý này. Vui lòng khoá tài khoản cũ để tạo mới!",
+      });
     }
 
     const passwordHash = bcrypt.hashSync(password, 10);
@@ -392,7 +390,7 @@ app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
     const confirmationLink = `http://localhost:3000/confirm`;
 
     const mailOptions = {
-      from: "Tour Travel",
+      from: "Tour Travel <your-email@gmail.com>",
       to: email,
       subject: "Yêu Cầu Kích Hoạt Tài Khoản",
       html: `Mã kích hoạt tài khoản : <h2>${confirmationCode}</h2>
@@ -437,7 +435,6 @@ app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
       .json({ message: "Đăng ký không thành công. Vui lòng thử lại sau." });
   }
 });
-
 
 app.get("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
@@ -559,49 +556,51 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
-app.put("/update-status-accounts/:accountId/:adminId", authenticateToken, async (req, res) => {
-  const { accountId, adminId } = req.params;
-  const { status, note } = req.body; 
+app.put(
+  "/update-status-accounts/:accountId/:adminId",
+  authenticateToken,
+  async (req, res) => {
+    const { accountId, adminId } = req.params;
+    const { status, note } = req.body;
 
-  try {
-    await pool.query("BEGIN");
+    try {
+      await pool.query("BEGIN");
 
-    const updateAccountStatusQuery = `
+      const updateAccountStatusQuery = `
       UPDATE accounts 
       SET status = $1 , note = $2
       WHERE account_id = $3
     `;
-    await pool.query(updateAccountStatusQuery, [status, note, accountId]);
+      await pool.query(updateAccountStatusQuery, [status, note, accountId]);
 
-    const insertAdminActionQuery = `
+      const insertAdminActionQuery = `
       INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
       VALUES ($1, $2, $3, $4, $5)
     `;
-    const action = "Cập nhật trạng thái tài khoản !";
-    const actionTime = new Date().toISOString();
-    const objectType = "accounts";
+      const action = "Cập nhật trạng thái tài khoản !";
+      const actionTime = new Date().toISOString();
+      const objectType = "accounts";
 
-    await pool.query(insertAdminActionQuery, [
-      adminId,
-      accountId,
-      action,
-      actionTime,
-      objectType,
-    ]);
+      await pool.query(insertAdminActionQuery, [
+        adminId,
+        accountId,
+        action,
+        actionTime,
+        objectType,
+      ]);
 
-    await pool.query("COMMIT");
+      await pool.query("COMMIT");
 
-    res
-      .status(200)
-      .json({
+      res.status(200).json({
         message: "Cập nhật tài khoản thành công !",
       });
-  } catch (error) {
-    await pool.query("ROLLBACK");
-    console.error("Lỗi khi cập nhật tài khoản:", error);
-    res.status(500).json({ error: "Internal server error" });
+    } catch (error) {
+      await pool.query("ROLLBACK");
+      console.error("Lỗi khi cập nhật tài khoản:", error);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
-});
+);
 
 app.put("/account/change-password/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
@@ -714,7 +713,7 @@ app.get("/get-users", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
-app.get("/get-admins",authenticateToken, async (req, res) => {
+app.get("/get-admins", authenticateToken, async (req, res) => {
   try {
     const query = `
       SELECT 
@@ -790,7 +789,7 @@ app.post(
         imageInserted = true;
       }
 
-      if(adminId){
+      if (adminId) {
         const adminActionQuery = `
         INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type)
         VALUES ($1, $2, $3, NOW(), $4)
@@ -801,9 +800,7 @@ app.post(
           "Thêm bài đăng tin tức !",
           "news",
         ]);
-
       }
-      
 
       if (imageInserted) {
         res
@@ -931,23 +928,22 @@ app.delete(
       const deleteQuery = "DELETE FROM news WHERE news_id = $1";
       await pool.query(deleteQuery, [newsId]);
 
-      if(adminId){
+      if (adminId) {
         const insertAdminActionQuery = `
       INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
       VALUES ($1, $2, $3, $4, $5)
     `;
-       const action = "Xoá bài đăng tin tức !";
-       const actionTime = new Date().toISOString();
-       const objectType = "news";
+        const action = "Xoá bài đăng tin tức !";
+        const actionTime = new Date().toISOString();
+        const objectType = "news";
 
-       await pool.query(insertAdminActionQuery, [
-         adminId,
-         newsId,
-         action,
-         actionTime,
-         objectType,
-       ]);
-
+        await pool.query(insertAdminActionQuery, [
+          adminId,
+          newsId,
+          action,
+          actionTime,
+          objectType,
+        ]);
       }
       res.status(204).send();
     } catch (error) {
@@ -1069,8 +1065,6 @@ app.post("/send-contact", async (req, res) => {
   const { fullname, email, phonenumber, message, address } = req.body;
 
   try {
-   
-
     const query = `
       INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status)
       VALUES ($1, $2, $3, $4, NOW(), $5, 'Pending')
@@ -1778,7 +1772,7 @@ app.get("/list-policies/:business_id", async (req, res) => {
 
   try {
     let query = `SELECT * FROM policies WHERE business_id = $1`;
-    
+
     const result = await pool.query(query, [business_id]);
 
     res.json(result.rows);
@@ -1792,7 +1786,7 @@ app.get("/list-policies-cancellation/:business_id", async (req, res) => {
 
   try {
     let query = `SELECT * FROM policy_cancellation WHERE business_id = $1`;
-    
+
     const result = await pool.query(query, [business_id]);
 
     res.json(result.rows);
@@ -1967,8 +1961,6 @@ app.post("/report-tour/:tourId/:customerId", async (req, res) => {
   const { type_report, description } = req.body;
 
   try {
-     
-    
     const query = `
       INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status)
       VALUES ($1, $2, NOW(), $3, $4, 'Pending')
@@ -2079,9 +2071,9 @@ app.put(
       INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type) 
       VALUES ($1, $2, $3, $4, $5)
     `;
-      const action = 'Cập nhật trạng thái báo cáo tour !';
+      const action = "Cập nhật trạng thái báo cáo tour !";
       const actionTime = new Date().toISOString();
-      const objectType = 'tour_reports';
+      const objectType = "tour_reports";
 
       await pool.query(insertAdminActionQuery, [
         adminId,
@@ -2183,11 +2175,9 @@ app.post("/daily-checkin/:customerId", async (req, res) => {
     ]);
 
     if (checkinResult.rows.length > 0) {
-      return res
-        .status(400)
-        .json({
-          message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !",
-        });
+      return res.status(400).json({
+        message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !",
+      });
     }
 
     const insertCheckinQuery = `
@@ -2490,6 +2480,50 @@ app.get(
     }
   }
 );
+app.get(
+  "/list-orders",
+  async (req, res) => {
+
+    try {   
+      const ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        t.name AS tour_name,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        o.status,
+        o.status_rating,
+        a.name AS customer_name
+        FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      JOIN accounts a ON c.account_id = a.account_id
+      ORDER BY o.booking_date_time DESC
+    `;
+       
+
+      const ordersResult = await pool.query(ordersQuery);
+
+      if (ordersResult.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+      }
+
+      res.status(200).json(ordersResult.rows);
+    } catch (error) {
+      console.error("Lỗi khi lấy danh sách đơn hàng:", error);
+      res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
+    }
+  }
+);
 app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
   const { orderId } = req.params;
 
@@ -2535,28 +2569,205 @@ app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy chi tiết đơn hàng" });
   }
 });
+
+const formatDate = (
+  date,
+  timezone = "Asia/Ho_Chi_Minh",
+  format = "DD-MM-YYYY HH:mm:ss"
+) => {
+  return moment(date).tz(timezone).format(format);
+};
+ const formatPrice = (price) => {
+   if (typeof price !== "number") {
+     return price;
+   }
+   return new Intl.NumberFormat("vi-VN", {
+     style: "currency",
+     currency: "VND",
+   }).format(price);
+ };
 app.put(
   "/update-status-orders/:orderId",
   authenticateToken,
   async (req, res) => {
     const { orderId } = req.params;
     const { status } = req.body;
-
+const currentDateTime = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD HH:mm:ss");
     try {
-      const query = `
-      UPDATE orders 
-      SET status = $1
-      WHERE order_id = $2
-    `;
-      await pool.query(query, [status, orderId]);
+      const orderDetailQuery = `
+        SELECT 
+          o.order_id,
+          o.tour_id,
+          t.name AS tour_name,
+          t.start_date,
+          o.adult_quantity,
+          o.child_quantity,
+          o.infant_quantity,
+          o.total_price,
+          o.status_payment,
+          o.booking_date_time,
+          o.note,
+          o.customer_id,
+          c.account_id,
+          a.name AS customer_name,
+          a.phone_number,
+          a.email,
+          a.address,
+          o.business_id,
+          o.code_order,
+          o.status,
+          o.status_rating,
+          l.location_name
+        FROM orders o
+        JOIN tours t ON o.tour_id = t.tour_id
+        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN accounts a ON c.account_id = a.account_id
+        WHERE o.order_id = $1
+      `;
 
-      res.status(200).json({ message: "Order status updated successfully" });
+      const orderDetailResult = await pool.query(orderDetailQuery, [orderId]);
+
+      if (orderDetailResult.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+      }
+
+      const query = `
+        UPDATE orders 
+        SET status = $1, date_time_confirm = $2
+        WHERE order_id = $3
+      `;
+      await pool.query(query, [status, currentDateTime, orderId]);
+
+      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+        orderId,
+      ]);
+
+      if (status === "Confirm") {
+        const mailOptions = {
+          from: "Tour Travel <your-email@gmail.com>",
+          to: updatedOrderDetailResult.rows[0].email,
+          subject: "Yêu Cầu Thanh Toán",
+          html: `
+             <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
+    <div style="background: #84ffff; border: 5px solid #00796b;">
+        <p style="text-align: center; padding: 2rem; color: black;">
+            Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
+            <br />
+            Booking của quý khách đã được chúng tôi xác nhận thành công!
+        </p>
+    </div>
+    <h4 style="font-size: 1.5rem;">
+        Phiếu xác nhận booking 
+        <span style="border: 3px solid red; color: red;">
+            CHƯA THANH TOÁN
+        </span>
+    </h4>
+    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+        <p>Mã booking: <strong>${
+          updatedOrderDetailResult.rows[0].code_order
+        }</strong></p>
+        <p>Tên Tour: <strong>${
+          updatedOrderDetailResult.rows[0].tour_name
+        }</strong></p>
+        <p>Ngày đi: <strong>${formatDate(
+          updatedOrderDetailResult.rows[0].start_date
+        )}</strong></p>
+        <p>Điểm khởi hành: <strong>${
+          updatedOrderDetailResult.rows[0].location_name
+        }</strong></p>
+        <p>Số lượng Người lớn: <strong>${
+          updatedOrderDetailResult.rows[0].adult_quantity
+        }</strong>, Trẻ em: <strong>${
+            updatedOrderDetailResult.rows[0].child_quantity
+          }</strong>, Trẻ nhỏ: <strong>${
+            updatedOrderDetailResult.rows[0].infant_quantity
+          }</strong></p>
+        <p>
+            Tổng tiền: 
+            <span style="color: red; font-weight: bold; font-size: 1.3rem;">
+                ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+            </span>
+        </p>
+        <p>Ngày booking: <strong>${formatDate(
+          updatedOrderDetailResult.rows[0].booking_date_time
+        )}</strong></p>
+        <p>Ghi chú: <strong>${
+          updatedOrderDetailResult.rows[0].note
+        }</strong></p>
+        <p>Thời gian xác nhận: <strong>${currentDateTime}</strong></p>
+        <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
+        <p style="color: red; font-weight: bold;">
+            Quý khách vui lòng thanh toán trong 24h kể từ thời gian xác nhận. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
+        </p>
+    </div>
+    <h4 style="font-weight: bold; font-size: 1.6rem;">THANH TOÁN</h4>
+    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+        <p>Để hoàn tất quá trình đặt tour, Quý khách vui lòng chuyển khoản số tiền cần thanh toán vào tài khoản ngân hàng sau:</p>
+        <p><strong>Số tài khoản:</strong> 0471000331055</p>
+        <p><strong>Ngân hàng:</strong> VietcomBank</p>
+        <p><strong>Tên tài khoản:</strong> NGUYEN MINH HIEU</p>
+        <p>Xin vui lòng ghi rõ họ tên, mã số booking <strong>${
+          updatedOrderDetailResult.rows[0].code_order
+        }</strong> trong phần ghi chú khi chuyển khoản.</p>
+        <p>Quý khách có thể kiểm tra thông tin chi tiết về đơn hàng của mình bằng cách đăng nhập vào tài khoản của mình trên trang web của chúng tôi.</p>
+        <p>Nếu Quý khách có bất kỳ câu hỏi nào, xin vui lòng liên hệ với chúng tôi qua email này.</p>
+    </div>
+    <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
+    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+        <p>Khách hàng: <strong>${
+          updatedOrderDetailResult.rows[0].customer_name
+        }</strong></p>
+        <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
+        <p>SĐT: <strong>${
+          updatedOrderDetailResult.rows[0].phone_number
+        }</strong></p>
+        <p>Địa chỉ: <strong>${
+          updatedOrderDetailResult.rows[0].address
+        }</strong></p>
+    </div>
+          `,
+        };
+
+        transporter.sendMail(mailOptions, function (error, info) {
+          if (error) {
+            console.log("Gửi email không thành công:", error);
+          } else {
+            console.log("Email xác nhận đã được gửi: " + info.response);
+          }
+        });
+      }
+
+      res.status(200).json({
+        message: "Order status updated successfully",
+        order: updatedOrderDetailResult.rows[0],
+      });
     } catch (error) {
       console.error("Failed to update Order status:", error);
-      res.status(500).json({ message: "Failed to update Order status " });
+      res.status(500).json({ message: "Failed to update Order status" });
     }
   }
 );
+
+cron.schedule("0 * * * *", async () => {
+  const currentDateTime = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD HH:mm:ss");
+  const past24Hours = moment().tz("Asia/Ho_Chi_Minh").subtract(24, "hours").format("YYYY-MM-DD HH:mm:ss");
+
+  const cancelOrderQuery = `
+    UPDATE orders
+    SET status = 'Cancel'
+    WHERE status_payment != 'Paid' AND date_time_confirm <= $1 AND status != 'Cancel'
+  `;
+
+  try {
+    await pool.query(cancelOrderQuery, [past24Hours]);
+    console.log(`Orders updated to 'Cancel' status if not paid within 24 hours as of ${currentDateTime}`);
+  } catch (error) {
+    console.error("Failed to cancel unpaid orders:", error);
+  }
+});
+
 
 // -----------------------------------------------
 module.exports = app;
