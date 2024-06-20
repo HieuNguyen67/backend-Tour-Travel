@@ -9,6 +9,11 @@ const bcrypt = require("bcryptjs");
 const nodemailer = require("nodemailer");
 const cron = require("node-cron");
 const moment = require("moment-timezone");
+const axios = require("axios");
+const CryptoJS = require("crypto-js");
+const uuid = require("uuid"); 
+app.use(express.json());
+app.use(express.urlencoded({extended:true}));
 
 pool.connect((err) => {
   if (err) {
@@ -2332,6 +2337,256 @@ app.post(
     }
   }
 );
+app.post(
+  "/book-tour-zalopay/:tourId/:customerId",
+  authenticateToken,
+  async (req, res) => {
+    const { tourId, customerId } = req.params;
+    const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
+
+    try {
+      const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
+      const tourResult = await pool.query(tourQuery, [tourId]);
+
+      if (tourResult.rows.length === 0) {
+        return res.status(404).json({ message: "Tour không tồn tại" });
+      }
+
+      const tour = tourResult.rows[0];
+      const total_quantity = adult_quantity + child_quantity + infant_quantity;
+
+      if (tour.quantity < total_quantity) {
+        return res.status(400).json({ message: "Số lượng không đủ" });
+      }
+
+      const total_price =
+        tour.adult_price * adult_quantity +
+        tour.child_price * child_quantity +
+        tour.infant_price * infant_quantity;
+
+      const code_order = generateRandomCode(10);
+
+      const orderQuery = `
+      INSERT INTO orders (
+        tour_id, 
+        adult_quantity, 
+        child_quantity, 
+        infant_quantity, 
+        total_price, 
+        status_payment, 
+        booking_date_time, 
+        note, 
+        customer_id, 
+        business_id, 
+        code_order, 
+        status, 
+        status_rating
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', NOW(), $6, $7, $8, $9, 'Pending', 'Not Rated') RETURNING *
+    `;
+
+      const orderResult = await pool.query(orderQuery, [
+        tourId,
+        adult_quantity,
+        child_quantity,
+        infant_quantity,
+        total_price,
+        note,
+        customerId,
+        tour.business_id,
+        code_order,
+      ]);
+
+      const order = orderResult.rows[0];
+
+      const updateTourQuery = `
+      UPDATE tours 
+      SET quantity = quantity - $1 
+      WHERE tour_id = $2
+    `;
+      await pool.query(updateTourQuery, [total_quantity, tourId]);
+
+      const zalopayConfig = {
+        appid: "554",
+        key1: "8NdU5pG5R2spGHGhyO99HN1OhD8IQJBn",
+        key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
+        endpoint: "https://sandbox.zalopay.com.vn/v001/tpe/createorder",
+      };
+
+      //       const embed_data = "{}";
+
+      // const items = "[]";
+      // const transID = `${moment1().format("YYMMDD")}_${uuid.v1()}`;
+      //       const mac = CryptoJS.HmacSHA256(`${zalopayConfig.app_id}|${transID}|${total_price}|${zalopayConfig.endpoint}|${embed_data}|${items}`, zalopayConfig.key1).toString(CryptoJS.enc.Hex);
+
+
+      // const paymentData = {
+      //   app_id: zalopayConfig.app_id,
+      //   app_trans_id: transID,
+      //   app_user: customerId,
+      //   amount: total_price,
+      //   app_time: Date.now(),
+      //   embed_data: embed_data,
+      //   item: items,
+      //   description: `Thanh toan cho don hang ${code_order}`,
+      //   mac: mac,
+      //   bankcode: "zalopayapp",
+      // };
+      const embeddata = {
+        merchantinfo: "Tour Travel",
+        redirecturl: "http://localhost:3000/",
+      };
+
+      const items = [
+      ];
+            const callback_url = 'https://cf11-14-179-236-58.ngrok-free.app/v1/api/admin/callback'; 
+
+
+      const paymentData = {
+        appid: zalopayConfig.appid,
+        apptransid: `${moment().format("YYMMDD")}_${uuid.v1()}`,
+        appuser: customerId,
+        apptime: Date.now(), // miliseconds
+        item: JSON.stringify(items),
+        embeddata: JSON.stringify(embeddata),
+        amount: total_price,
+        description: `Thanh toan cho don hang ${code_order}`,
+        bankcode: "",
+        callback_url: callback_url,
+      };
+
+const data =
+  zalopayConfig.appid +
+  "|" +
+  paymentData.apptransid +
+  "|" +
+  paymentData.appuser +
+  "|" +
+  paymentData.amount +
+  "|" +
+  paymentData.apptime +
+  "|" +
+  paymentData.embeddata +
+  "|" +
+  paymentData.item;
+paymentData.mac = CryptoJS.HmacSHA256(data, zalopayConfig.key1).toString();
+
+    const paymentResponse = await axios.post(zalopayConfig.endpoint, null, {
+      params: paymentData,
+    });
+      if (paymentResponse.data.returncode !== 1) {
+        return res
+          .status(500)
+          .json({ message: "Tạo thanh toán không thành công." });
+      }
+
+      res.status(201).json({
+        message: "Quý khách đã đặt tour thành công! Vui lòng thanh toán.",
+        order: order,
+        payment_url: paymentResponse.data.orderurl,
+      });
+    } catch (error) {
+      console.error("Đặt tour không thành công:", error);
+      res.status(500).json({
+        message: "Đặt tour không thành công. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+
+// app.post("/callback", async (req, res) => {
+//   const data = req.body.data;
+//   const mac = req.body.mac;
+//   console.log("data=",data);
+   
+
+
+//   // Verify MAC
+//   const zalopayConfig = {
+//     app_id: "554",
+//     key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
+//   };
+
+//    const macVerify = CryptoJS.HmacSHA256(data, zalopayConfig.key2).toString(CryptoJS.enc.Hex);
+//  console.log("mac=", macVerify);
+
+//   if (mac !== macVerify) {
+//     return res.status(400).json({ message: "Invalid MAC" });
+//   }
+
+//   const { app_trans_id, zp_trans_id, amount, server_time, channel } =
+//     JSON.parse(data);
+
+//   try {
+//     // Update the order status to 'Paid' in the database
+//     const updateOrderQuery = `
+//       UPDATE orders
+//       SET status_payment = 'Paid'
+//       WHERE code_order = $1
+//     `;
+
+//     await pool.query(updateOrderQuery, [app_trans_id]);
+
+//     // Record the payment details in the payments table
+//     const paymentQuery = `
+//       INSERT INTO payments (
+//         order_id,
+//         payment_date,
+//         amount,
+//         payment_method,
+//         payment_status
+//       ) VALUES (
+//         (SELECT order_id FROM orders WHERE code_order = $1),
+//         NOW(),
+//         $2,
+//         $3,
+//         'Completed'
+//       )
+//     `;
+
+//     await pool.query(paymentQuery, [app_trans_id, amount, channel]);
+
+//     res.status(200).json({ return_code: 1, return_message: "success" });
+//   } catch (error) {
+//     console.error("Payment update failed:", error);
+//     res.status(500).json({ return_code: -1, return_message: "failed" });
+//   }
+// });
+app.post("/callback", (req, res) => {
+  let result = {};
+
+  try {
+    let dataStr = req.body.data;
+    let reqMac = req.body.mac;
+      const config = {
+        app_id: "554",
+        key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
+      };
+
+    let mac = CryptoJS.HmacSHA256(dataStr, config.key2).toString();
+    console.log("mac =", mac);
+
+    if (reqMac !== mac) {
+      result.returncode = -1;
+      result.returnmessage = "mac not equal";
+    } else {
+      
+      let dataJson = JSON.parse(dataStr, config.key2);
+      console.log(
+        "update order's status = success where apptransid =",
+        dataJson["apptransid"]
+      );
+
+      result.returncode = 1;
+      result.returnmessage = "success";
+    }
+  } catch (ex) {
+    result.returncode = 0; 
+    result.returnmessage = ex.message;
+  }
+
+  res.json(result);
+});
+
 app.get(
   "/list-orders-customer/:customerId/:status?",
   authenticateToken,
@@ -2480,12 +2735,9 @@ app.get(
     }
   }
 );
-app.get(
-  "/list-orders",
-  async (req, res) => {
-
-    try {   
-      const ordersQuery = `
+app.get("/list-orders", authenticateToken, async (req, res) => {
+  try {
+    const ordersQuery = `
       SELECT 
         o.order_id,
         o.tour_id,
@@ -2509,21 +2761,19 @@ app.get(
       JOIN accounts a ON c.account_id = a.account_id
       ORDER BY o.booking_date_time DESC
     `;
-       
 
-      const ordersResult = await pool.query(ordersQuery);
+    const ordersResult = await pool.query(ordersQuery);
 
-      if (ordersResult.rows.length === 0) {
-        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
-      }
-
-      res.status(200).json(ordersResult.rows);
-    } catch (error) {
-      console.error("Lỗi khi lấy danh sách đơn hàng:", error);
-      res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
+    if (ordersResult.rows.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
+
+    res.status(200).json(ordersResult.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách đơn hàng:", error);
+    res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
   }
-);
+});
 app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
   const { orderId } = req.params;
 
@@ -2768,6 +3018,154 @@ cron.schedule("0 * * * *", async () => {
   }
 });
 
+app.put(
+  "/update-status-payment-orders/:orderId",
+  authenticateToken,
+  async (req, res) => {
+    const { orderId } = req.params;
+    const { statuspayments } = req.body;
+    
+    try {
+      const orderDetailQuery = `
+        SELECT 
+          o.order_id,
+          o.tour_id,
+          t.name AS tour_name,
+          t.start_date,
+          o.adult_quantity,
+          o.child_quantity,
+          o.infant_quantity,
+          o.total_price,
+          o.status_payment,
+          o.booking_date_time,
+          o.note,
+          o.customer_id,
+          c.account_id,
+          a.name AS customer_name,
+          a.phone_number,
+          a.email,
+          a.address,
+          o.business_id,
+          o.code_order,
+          o.status,
+          o.status_rating,
+          l.location_name
+        FROM orders o
+        JOIN tours t ON o.tour_id = t.tour_id
+        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN accounts a ON c.account_id = a.account_id
+        WHERE o.order_id = $1
+      `;
+
+      const orderDetailResult = await pool.query(orderDetailQuery, [orderId]);
+
+      if (orderDetailResult.rows.length === 0) {
+        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+      }
+
+      const query = `
+        UPDATE orders 
+        SET status_payment = $1
+        WHERE order_id = $2
+      `;
+      await pool.query(query, [statuspayments, orderId]);
+
+      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+        orderId,
+      ]);
+
+      if (statuspayments === "Paid") {
+        const mailOptions = {
+          from: "Tour Travel <your-email@gmail.com>",
+          to: updatedOrderDetailResult.rows[0].email,
+          subject: "Thanh Toán Thành Công",
+          html: `
+             <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
+    <div style="background: #84ffff; border: 5px solid #00796b;">
+        <p style="text-align: center; padding: 2rem; color: black;">
+            Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
+            <br />
+            Booking của quý khách đã được thanh toán thành công !
+        </p>
+    </div>
+    <h4 style="font-size: 1.5rem;">
+        Phiếu xác nhận Thanh toán 
+        <span style="border: 3px solid red; color: red;">
+            ĐÃ THANH TOÁN
+        </span>
+    </h4>
+    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+        <p>Mã booking: <strong>${
+          updatedOrderDetailResult.rows[0].code_order
+        }</strong></p>
+        <p style="color: red;">Xin quý khách vui lòng nhớ số booking để thuận tiện cho giao dịch sau này.</p>
+        <p>Tên Tour: <strong>${
+          updatedOrderDetailResult.rows[0].tour_name
+        }</strong></p>
+        <p>Ngày đi: <strong>${formatDate(
+          updatedOrderDetailResult.rows[0].start_date
+        )}</strong></p>
+        <p>Điểm khởi hành: <strong>${
+          updatedOrderDetailResult.rows[0].location_name
+        }</strong></p>
+        <p>Số lượng Người lớn: <strong>${
+          updatedOrderDetailResult.rows[0].adult_quantity
+        }</strong>, Trẻ em: <strong>${
+            updatedOrderDetailResult.rows[0].child_quantity
+          }</strong>, Trẻ nhỏ: <strong>${
+            updatedOrderDetailResult.rows[0].infant_quantity
+          }</strong></p>
+        <p>
+            Tổng tiền: 
+            <span style="color: red; font-weight: bold; font-size: 1.3rem;">
+                ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+            </span>
+        </p>
+        <p>Ngày booking: <strong>${formatDate(
+          updatedOrderDetailResult.rows[0].booking_date_time
+        )}</strong></p>
+        <p>Ghi chú: <strong>${
+          updatedOrderDetailResult.rows[0].note
+        }</strong></p>
+        
+    </div>
+    <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
+    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+        <p>Khách hàng: <strong>${
+          updatedOrderDetailResult.rows[0].customer_name
+        }</strong></p>
+        <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
+        <p>SĐT: <strong>${
+          updatedOrderDetailResult.rows[0].phone_number
+        }</strong></p>
+        <p>Địa chỉ: <strong>${
+          updatedOrderDetailResult.rows[0].address
+        }</strong></p>
+    </div>
+          `,
+        };
+
+        transporter.sendMail(mailOptions, function (error, info) {
+          if (error) {
+            console.log("Gửi email không thành công:", error);
+          } else {
+            console.log("Email xác nhận đã được gửi: " + info.response);
+          }
+        });
+      }
+
+      res.status(200).json({
+        message: "Order status updated successfully",
+        order: updatedOrderDetailResult.rows[0],
+      });
+    } catch (error) {
+      console.error("Failed to update Order status:", error);
+      res.status(500).json({ message: "Failed to update Order status" });
+    }
+  }
+);
 
 // -----------------------------------------------
 module.exports = app;
