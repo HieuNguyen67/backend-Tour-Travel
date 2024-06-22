@@ -5,7 +5,7 @@ const dotenv = require("dotenv");
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 5030; 
+const PORT = process.env.PORT || 5030;
 
 // Middleware
 app.use(cors());
@@ -13,7 +13,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-const routes = require("./routes");
+const routes = require("./src/route/routes");
 routes(app);
 
 // Start the server
