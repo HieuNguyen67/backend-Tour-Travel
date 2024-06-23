@@ -9,9 +9,12 @@ const CryptoJS = require("crypto-js");
 const crypto = require("crypto");
 const uuid = require("uuid");
 const bodyParser = require("body-parser");
+const url = require("url");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { generateRandomCode } = require("../middlewares/randomcode.js");
 const { transporter } = require("../middlewares/nodemail.js");
+const querystring = require("qs");
+
 const currentDateTime = moment()
   .tz("Asia/Ho_Chi_Minh")
   .format("YYYY-MM-DD HH:mm:ss");
@@ -134,9 +137,9 @@ app.post("/send-contact", async (req, res) => {
   try {
     const query = `
       INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status)
-      VALUES ($1, $2, $3, $4, NOW(), $5, 'Pending')
+      VALUES ($1, $2, $3, $4, $5, $6, 'Pending')
     `;
-    await pool.query(query, [fullname, email, phonenumber, message, address]);
+    await pool.query(query, [fullname, email, phonenumber, message,currentDateTime, address]);
 
     res.status(201).json({ message: "Gửi thông tin liên hệ thành công !" });
   } catch (error) {
@@ -153,8 +156,8 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 
   try {
     const newContact = await pool.query(
-      "INSERT INTO contacts_business (business_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', NOW()) RETURNING *",
-      [businessId, tourId, fullname, email, phonenumber, message]
+      "INSERT INTO contacts_business (business_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7) RETURNING *",
+      [businessId, tourId, fullname, email, phonenumber, message, currentDateTime]
     );
 
     res.status(201).json(newContact.rows[0]);
@@ -300,9 +303,9 @@ app.post("/report-tour/:tourId/:customerId", async (req, res) => {
   try {
     const query = `
       INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status)
-      VALUES ($1, $2, NOW(), $3, $4, 'Pending')
+      VALUES ($1, $2, $3, $4, $5, 'Pending')
     `;
-    const values = [tourId, customerId, type_report, description];
+    const values = [tourId, customerId, currentDateTime, type_report, description];
     const result = await pool.query(query, values);
 
     res.status(200).json({ message: "Report tour successful" });
@@ -533,7 +536,7 @@ app.post(
         code_order, 
         status, 
         status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', NOW(), $6, $7, $8, $9, 'Pending', 'Not Rated') RETURNING *
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated') RETURNING *
     `;
 
       const orderResult = await pool.query(orderQuery, [
@@ -542,6 +545,7 @@ app.post(
         child_quantity,
         infant_quantity,
         total_price,
+        currentDateTime,
         note,
         customerId,
         tour.business_id,
@@ -571,7 +575,7 @@ app.post(
 
       const items = [];
       const callback_url =
-        " https://aa80-125-235-122-3.ngrok-free.app/v1/api/admin/callback";
+        "https://2d41-14-179-236-58.ngrok-free.app/v1/api/customer/callback";
 
       const paymentData = {
         appid: zalopayConfig.appid,
@@ -727,8 +731,7 @@ const momoConfig = {
   accessKey: "F8BBA842ECF85",
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
-  notifyUrl:
-    " https://aa80-125-235-122-3.ngrok-free.app/v1/api/admin/momo/webhook",
+  notifyUrl: "https://2d41-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -736,7 +739,13 @@ app.post(
   authenticateToken,
   async (req, res) => {
     const { tourId, customerId } = req.params;
-    const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
+    const {
+      adult_quantity,
+      child_quantity,
+      infant_quantity,
+      note,
+      paymentMethod,
+    } = req.body;
 
     try {
       const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
@@ -791,7 +800,10 @@ app.post(
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
       const amount = total_price.toString();
       const extraData = "";
-      const requestType = "captureWallet";
+      // const requestType = "captureWallet";
+      // const requestType = "payWithATM";
+       const requestType = paymentMethod;
+
       const returnUrl = `http://localhost:3000/checkout/1/${code_order}`;
 
       const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
@@ -866,8 +878,8 @@ app.post("/momo/webhook", async (req, res) => {
     extraData,
     signature,
   } = req.body;
-  // console.log("callback: ");
-  // console.log(req.body);
+  console.log("callback: ");
+  console.log(req.body);
 
   try {
     if (resultCode === 0) {
@@ -879,6 +891,7 @@ app.post("/momo/webhook", async (req, res) => {
 
       await pool.query(updateOrderQuery, [orderId]);
 
+      const method = partnerCode +" "+ payType;
       const paymentQuery = `
         INSERT INTO payments (
           order_id,
@@ -890,12 +903,17 @@ app.post("/momo/webhook", async (req, res) => {
           (SELECT order_id FROM orders WHERE code_order = $1),
           $2,
           $3,
-          'MoMo',
+          $4,
           'Completed'
         )
       `;
 
-      await pool.query(paymentQuery, [orderId, currentDateTime, amount]);
+      await pool.query(paymentQuery, [
+        orderId,
+        currentDateTime,
+        amount,
+        method,
+      ]);
 
       const orderDetailQuery = `
         SELECT 
@@ -1019,6 +1037,7 @@ app.post("/momo/webhook", async (req, res) => {
   }
 });
 
+
 //-----------------------------------------------
 
 app.get(
@@ -1095,8 +1114,6 @@ app.get(
     }
   }
 );
-
-
 
 // -----------------------------------------------
 module.exports = app;
