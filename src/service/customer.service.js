@@ -3,21 +3,15 @@ const express = require("express");
 const app = express.Router();
 const pool = require("../../connectDB.js");
 const bcrypt = require("bcryptjs");
-const moment = require("moment-timezone");
+const moment = require("moment");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const crypto = require("crypto");
 const uuid = require("uuid");
 const bodyParser = require("body-parser");
-const url = require("url");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { generateRandomCode } = require("../middlewares/randomcode.js");
 const { transporter } = require("../middlewares/nodemail.js");
-const querystring = require("qs");
-
-const currentDateTime = moment()
-  .tz("Asia/Ho_Chi_Minh")
-  .format("YYYY-MM-DD HH:mm:ss");
 const formatDate = (
   date,
   timezone = "Asia/Ho_Chi_Minh",
@@ -26,6 +20,17 @@ const formatDate = (
   return moment(date).tz(timezone).format(format);
 };
 
+const currentDateTime = moment()
+  .tz("Asia/Ho_Chi_Minh")
+  .format("YYYY-MM-DD HH:mm:ss");
+
+const formatDate1 = (
+  date,
+  timezone = "Asia/Ho_Chi_Minh",
+  format = "DD-MM-YYYY"
+) => {
+  return moment(date).tz(timezone).format(format);
+};
 const formatPrice = (price) => {
   if (typeof price !== "number") {
     return price;
@@ -133,13 +138,22 @@ app.post("/register", async (req, res) => {
 
 app.post("/send-contact", async (req, res) => {
   const { fullname, email, phonenumber, message, address } = req.body;
-
+  const currentDateTime = moment()
+    .tz("Asia/Ho_Chi_Minh")
+    .format("YYYY-MM-DD HH:mm:ss");
   try {
     const query = `
       INSERT INTO contacts (fullname, email, phonenumber, message, senttime, address, status)
       VALUES ($1, $2, $3, $4, $5, $6, 'Pending')
     `;
-    await pool.query(query, [fullname, email, phonenumber, message,currentDateTime, address]);
+    await pool.query(query, [
+      fullname,
+      email,
+      phonenumber,
+      message,
+      currentDateTime,
+      address,
+    ]);
 
     res.status(201).json({ message: "Gửi thông tin liên hệ thành công !" });
   } catch (error) {
@@ -153,11 +167,21 @@ app.post("/send-contact", async (req, res) => {
 app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
   const { businessId, tourId } = req.params;
   const { fullname, email, phonenumber, message } = req.body;
-
+  const currentDateTime = moment()
+    .tz("Asia/Ho_Chi_Minh")
+    .format("YYYY-MM-DD HH:mm:ss");
   try {
     const newContact = await pool.query(
       "INSERT INTO contacts_business (business_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7) RETURNING *",
-      [businessId, tourId, fullname, email, phonenumber, message, currentDateTime]
+      [
+        businessId,
+        tourId,
+        fullname,
+        email,
+        phonenumber,
+        message,
+        currentDateTime,
+      ]
     );
 
     res.status(201).json(newContact.rows[0]);
@@ -299,13 +323,21 @@ app.get("/list-tours-filter", async (req, res) => {
 app.post("/report-tour/:tourId/:customerId", async (req, res) => {
   const { tourId, customerId } = req.params;
   const { type_report, description } = req.body;
-
+  const currentDateTime = moment()
+    .tz("Asia/Ho_Chi_Minh")
+    .format("YYYY-MM-DD HH:mm:ss");
   try {
     const query = `
       INSERT INTO tour_reports (tour_id, customer_id, reportdate, type_report, description, status)
       VALUES ($1, $2, $3, $4, $5, 'Pending')
     `;
-    const values = [tourId, customerId, currentDateTime, type_report, description];
+    const values = [
+      tourId,
+      customerId,
+      currentDateTime,
+      type_report,
+      description,
+    ];
     const result = await pool.query(query, values);
 
     res.status(200).json({ message: "Report tour successful" });
@@ -416,7 +448,9 @@ app.post(
   async (req, res) => {
     const { tourId, customerId } = req.params;
     const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
-
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
     try {
       const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
       const tourResult = await pool.query(tourQuery, [tourId]);
@@ -452,7 +486,7 @@ app.post(
         code_order, 
         status, 
         status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated') RETURNING *
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated') RETURNING *
     `;
 
       const code_order = generateRandomCode(10);
@@ -469,6 +503,8 @@ app.post(
         tour.business_id,
         code_order,
       ]);
+            const orderId = orderResult.rows[0].order_id;
+
 
       const updateTourQuery = `
       UPDATE tours 
@@ -481,6 +517,128 @@ app.post(
         message: "Quý khách đã đặt tour thành công!",
         order: orderResult.rows[0],
       });
+
+       const orderDetailQuery = `
+        SELECT 
+          o.order_id,
+          o.tour_id,
+          t.name AS tour_name,
+          t.start_date,
+          o.adult_quantity,
+          o.child_quantity,
+          o.infant_quantity,
+          o.total_price,
+          o.status_payment,
+          o.booking_date_time,
+          o.note,
+          o.customer_id,
+          c.account_id,
+          a.name AS customer_name,
+          a.phone_number,
+          a.email,
+          a.address,
+          o.business_id,
+          o.code_order,
+          o.status,
+          o.status_rating,
+          l.location_name
+        FROM orders o
+        JOIN tours t ON o.tour_id = t.tour_id
+        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN accounts a ON c.account_id = a.account_id
+        WHERE o.order_id = $1
+      `;
+        const updatedOrderDetailResult = await pool.query(orderDetailQuery, [orderId]);
+
+          const mailOptions = {
+            from: "Tour Travel <your-email@gmail.com>",
+            to: updatedOrderDetailResult.rows[0].email,
+            subject: "Yêu Cầu Thanh Toán",
+            html: `
+               <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
+      <div style="background: #84ffff; border: 5px solid #00796b;">
+          <p style="text-align: center; padding: 2rem; color: black;">
+              Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
+              <br />
+              Booking của quý khách đã được chúng tôi xác nhận thành công!
+          </p>
+      </div>
+      <h4 style="font-size: 1.5rem;">
+          Phiếu xác nhận booking
+          <span style="border: 3px solid red; color: red;">
+              CHƯA THANH TOÁN
+          </span>
+      </h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Mã booking: <strong>${
+            updatedOrderDetailResult.rows[0].code_order
+          }</strong></p>
+          <p>Tên Tour: <strong>${
+            updatedOrderDetailResult.rows[0].tour_name
+          }</strong></p>
+          <p>Ngày đi: <strong>${formatDate1(
+            updatedOrderDetailResult.rows[0].start_date
+          )}</strong></p>
+          <p>Điểm khởi hành: <strong>${
+            updatedOrderDetailResult.rows[0].location_name
+          }</strong></p>
+          <p>Số lượng Người lớn: <strong>${
+            updatedOrderDetailResult.rows[0].adult_quantity
+          }</strong>, Trẻ em: <strong>${
+              updatedOrderDetailResult.rows[0].child_quantity
+            }</strong>, Trẻ nhỏ: <strong>${
+              updatedOrderDetailResult.rows[0].infant_quantity
+            }</strong></p>
+          <p>
+              Tổng tiền:
+              <span style="color: red; font-weight: bold; font-size: 1.3rem;">
+                  ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+              </span>
+          </p>
+          <p>Ngày booking: <strong>${formatDate(
+            updatedOrderDetailResult.rows[0].booking_date_time
+          )}</strong></p>
+          <p>Ghi chú: <strong>${
+            updatedOrderDetailResult.rows[0].note
+          }</strong></p>
+          <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
+          <p style="color: red; font-weight: bold;">
+              Quý khách vui lòng thanh toán trong 24h kể từ thời gian booking. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
+          </p>
+      </div>
+      <h4 style="font-weight: bold; font-size: 1.6rem;">THANH TOÁN</h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Nếu quý khách chưa thanh toán. Để hoàn tất quá trình đặt tour, Quý khách vui lòng đăng nhập vào Trang Web Tour Travel và bấm vào chi tiết đơn đặt hàng trong phần thông tin cá nhân và chọn phương thức thanh toán.</p>
+          <p>Nếu quý khách đã thanh toán vui lòng bỏ qua email này.</p>
+          <p>Quý khách có thể kiểm tra thông tin chi tiết về đơn hàng của mình bằng cách đăng nhập vào tài khoản của mình trên trang web của chúng tôi.</p>
+          <p>Nếu Quý khách có bất kỳ câu hỏi nào, xin vui lòng liên hệ với chúng tôi qua email này.</p>
+      </div>
+      <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Khách hàng: <strong>${
+            updatedOrderDetailResult.rows[0].customer_name
+          }</strong></p>
+          <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
+          <p>SĐT: <strong>${
+            updatedOrderDetailResult.rows[0].phone_number
+          }</strong></p>
+          <p>Địa chỉ: <strong>${
+            updatedOrderDetailResult.rows[0].address
+          }</strong></p>
+      </div>
+            `,
+          };
+
+          transporter.sendMail(mailOptions, function (error, info) {
+            if (error) {
+              console.log("Gửi email không thành công:", error);
+            } else {
+              console.log("Email xác nhận đã được gửi: " + info.response);
+            }
+          });
+        
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
       res.status(500).json({
@@ -489,240 +647,6 @@ app.post(
     }
   }
 );
-
-//-----------------------------------------------
-
-app.post(
-  "/book-tour-zalopay/:tourId/:customerId",
-  authenticateToken,
-  async (req, res) => {
-    const { tourId, customerId } = req.params;
-    const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
-
-    try {
-      const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
-      const tourResult = await pool.query(tourQuery, [tourId]);
-
-      if (tourResult.rows.length === 0) {
-        return res.status(404).json({ message: "Tour không tồn tại" });
-      }
-
-      const tour = tourResult.rows[0];
-      const total_quantity = adult_quantity + child_quantity + infant_quantity;
-
-      if (tour.quantity < total_quantity) {
-        return res.status(400).json({ message: "Số lượng không đủ" });
-      }
-
-      const total_price =
-        tour.adult_price * adult_quantity +
-        tour.child_price * child_quantity +
-        tour.infant_price * infant_quantity;
-
-      const code_order = generateRandomCode(10);
-
-      const orderQuery = `
-      INSERT INTO orders (
-        tour_id, 
-        adult_quantity, 
-        child_quantity, 
-        infant_quantity, 
-        total_price, 
-        status_payment, 
-        booking_date_time, 
-        note, 
-        customer_id, 
-        business_id, 
-        code_order, 
-        status, 
-        status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated') RETURNING *
-    `;
-
-      const orderResult = await pool.query(orderQuery, [
-        tourId,
-        adult_quantity,
-        child_quantity,
-        infant_quantity,
-        total_price,
-        currentDateTime,
-        note,
-        customerId,
-        tour.business_id,
-        code_order,
-      ]);
-
-      const order = orderResult.rows[0];
-
-      const updateTourQuery = `
-      UPDATE tours 
-      SET quantity = quantity - $1 
-      WHERE tour_id = $2
-    `;
-      await pool.query(updateTourQuery, [total_quantity, tourId]);
-
-      const zalopayConfig = {
-        appid: "554",
-        key1: "8NdU5pG5R2spGHGhyO99HN1OhD8IQJBn",
-        key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
-        endpoint: "https://sandbox.zalopay.com.vn/v001/tpe/createorder",
-      };
-
-      const embeddata = {
-        merchantinfo: "Tour Travel",
-        redirecturl: `http://localhost:3000/checkout/2/${code_order}`,
-      };
-
-      const items = [];
-      const callback_url =
-        "https://2d41-14-179-236-58.ngrok-free.app/v1/api/customer/callback";
-
-      const paymentData = {
-        appid: zalopayConfig.appid,
-        apptransid: `${moment().format("YYMMDD")}_${uuid.v1()}`,
-        appuser: customerId,
-        apptime: Date.now(),
-        item: JSON.stringify(items),
-        embeddata: JSON.stringify(embeddata),
-        amount: total_price,
-        description: `Thanh toan cho don hang ${code_order}`,
-        bankcode: "",
-        callback_url: callback_url,
-      };
-
-      const data =
-        zalopayConfig.appid +
-        "|" +
-        paymentData.apptransid +
-        "|" +
-        paymentData.appuser +
-        "|" +
-        paymentData.amount +
-        "|" +
-        paymentData.apptime +
-        "|" +
-        paymentData.embeddata +
-        "|" +
-        paymentData.item;
-      paymentData.mac = CryptoJS.HmacSHA256(
-        data,
-        zalopayConfig.key1
-      ).toString();
-
-      const paymentResponse = await axios.post(zalopayConfig.endpoint, null, {
-        params: paymentData,
-      });
-      if (paymentResponse.data.returncode !== 1) {
-        return res
-          .status(500)
-          .json({ message: "Tạo thanh toán không thành công." });
-      }
-
-      res.status(201).json({
-        message: "Quý khách đã đặt tour thành công! Vui lòng thanh toán.",
-        order: order,
-        payment_url: paymentResponse.data.orderurl,
-      });
-    } catch (error) {
-      console.error("Đặt tour không thành công:", error);
-      res.status(500).json({
-        message: "Đặt tour không thành công. Vui lòng thử lại sau.",
-      });
-    }
-  }
-);
-// app.post("/callback", async (req, res) => {
-//   const data = req.body.data;
-//   const mac = req.body.mac;
-//   console.log("data=",data);
-
-//   // Verify MAC
-//   const zalopayConfig = {
-//     app_id: "554",
-//     key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
-//   };
-
-//    const macVerify = CryptoJS.HmacSHA256(data, zalopayConfig.key2).toString(CryptoJS.enc.Hex);
-//  console.log("mac=", macVerify);
-
-//   if (mac !== macVerify) {
-//     return res.status(400).json({ message: "Invalid MAC" });
-//   }
-
-//   const { app_trans_id, zp_trans_id, amount, server_time, channel } =
-//     JSON.parse(data);
-
-//   try {
-//     // Update the order status to 'Paid' in the database
-//     const updateOrderQuery = `
-//       UPDATE orders
-//       SET status_payment = 'Paid'
-//       WHERE code_order = $1
-//     `;
-
-//     await pool.query(updateOrderQuery, [app_trans_id]);
-
-//     // Record the payment details in the payments table
-//     const paymentQuery = `
-//       INSERT INTO payments (
-//         order_id,
-//         payment_date,
-//         amount,
-//         payment_method,
-//         payment_status
-//       ) VALUES (
-//         (SELECT order_id FROM orders WHERE code_order = $1),
-//         NOW(),
-//         $2,
-//         $3,
-//         'Completed'
-//       )
-//     `;
-
-//     await pool.query(paymentQuery, [app_trans_id, amount, channel]);
-
-//     res.status(200).json({ return_code: 1, return_message: "success" });
-//   } catch (error) {
-//     console.error("Payment update failed:", error);
-//     res.status(500).json({ return_code: -1, return_message: "failed" });
-//   }
-// });
-app.post("/callback", (req, res) => {
-  let result = {};
-  console.log("callback: ");
-  console.log(req.body);
-
-  try {
-    let dataStr = req.body.data;
-    let reqMac = req.body.mac;
-    const config = {
-      app_id: "554",
-      key2: "uUfsWgfLkRLzq6W2uNXTCxrfxs51auny",
-    };
-
-    let mac = CryptoJS.HmacSHA256(dataStr, config.key2).toString();
-    console.log("mac =", mac);
-
-    if (reqMac !== mac) {
-      result.returncode = -1;
-      result.returnmessage = "mac not equal";
-    } else {
-      let dataJson = JSON.parse(dataStr, config.key2);
-      console.log(
-        "update order's status = success where apptransid =",
-        dataJson["apptransid"]
-      );
-
-      result.returncode = 1;
-      result.returnmessage = "success";
-    }
-  } catch (ex) {
-    result.returncode = 0;
-    result.returnmessage = ex.message;
-  }
-
-  res.json(result);
-});
 
 //-----------------------------------------------
 
@@ -731,7 +655,8 @@ const momoConfig = {
   accessKey: "F8BBA842ECF85",
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
-  notifyUrl: "https://2d41-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
+  notifyUrl:
+    "https://cb0f-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -746,6 +671,9 @@ app.post(
       note,
       paymentMethod,
     } = req.body;
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
 
     try {
       const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
@@ -773,7 +701,7 @@ app.post(
         tour_id, adult_quantity, child_quantity, infant_quantity, total_price,
         status_payment, booking_date_time, note, customer_id, business_id, 
         code_order, status, status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated')
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated')
       RETURNING *
     `;
 
@@ -791,6 +719,7 @@ app.post(
       ]);
 
       const order = orderResult.rows[0];
+        const order_Id = orderResult.rows[0].order_id;
 
       const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
@@ -802,9 +731,9 @@ app.post(
       const extraData = "";
       // const requestType = "captureWallet";
       // const requestType = "payWithATM";
-       const requestType = paymentMethod;
+      const requestType = paymentMethod;
 
-      const returnUrl = `http://localhost:3000/checkout/1/${code_order}`;
+      const returnUrl = `http://localhost:3000/checkout`;
 
       const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
       const signature = crypto
@@ -851,6 +780,131 @@ app.post(
         order: order,
         payment_url: paymentResponse.data.payUrl,
       });
+      
+       const orderDetailQuery = `
+        SELECT 
+          o.order_id,
+          o.tour_id,
+          t.name AS tour_name,
+          t.start_date,
+          o.adult_quantity,
+          o.child_quantity,
+          o.infant_quantity,
+          o.total_price,
+          o.status_payment,
+          o.booking_date_time,
+          o.note,
+          o.customer_id,
+          c.account_id,
+          a.name AS customer_name,
+          a.phone_number,
+          a.email,
+          a.address,
+          o.business_id,
+          o.code_order,
+          o.status,
+          o.status_rating,
+          l.location_name
+        FROM orders o
+        JOIN tours t ON o.tour_id = t.tour_id
+        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
+        JOIN customers c ON o.customer_id = c.customer_id
+        JOIN accounts a ON c.account_id = a.account_id
+        WHERE o.order_id = $1
+      `;
+       const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+         order_Id,
+       ]);
+
+       const mailOptions = {
+         from: "Tour Travel <your-email@gmail.com>",
+         to: updatedOrderDetailResult.rows[0].email,
+         subject: "Yêu Cầu Thanh Toán",
+         html: `
+               <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
+      <div style="background: #84ffff; border: 5px solid #00796b;">
+          <p style="text-align: center; padding: 2rem; color: black;">
+              Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
+              <br />
+              Booking của quý khách đã được chúng tôi xác nhận thành công!
+          </p>
+      </div>
+      <h4 style="font-size: 1.5rem;">
+          Phiếu xác nhận booking
+          <span style="border: 3px solid red; color: red;">
+              CHƯA THANH TOÁN
+          </span>
+      </h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Mã booking: <strong>${
+            updatedOrderDetailResult.rows[0].code_order
+          }</strong></p>
+          <p>Tên Tour: <strong>${
+            updatedOrderDetailResult.rows[0].tour_name
+          }</strong></p>
+          <p>Ngày đi: <strong>${formatDate1(
+            updatedOrderDetailResult.rows[0].start_date
+          )}</strong></p>
+          <p>Điểm khởi hành: <strong>${
+            updatedOrderDetailResult.rows[0].location_name
+          }</strong></p>
+          <p>Số lượng Người lớn: <strong>${
+            updatedOrderDetailResult.rows[0].adult_quantity
+          }</strong>, Trẻ em: <strong>${
+           updatedOrderDetailResult.rows[0].child_quantity
+         }</strong>, Trẻ nhỏ: <strong>${
+           updatedOrderDetailResult.rows[0].infant_quantity
+         }</strong></p>
+          <p>
+              Tổng tiền:
+              <span style="color: red; font-weight: bold; font-size: 1.3rem;">
+                  ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+              </span>
+          </p>
+          <p>Ngày booking: <strong>${formatDate(
+            updatedOrderDetailResult.rows[0].booking_date_time
+          )}</strong></p>
+          <p>Ghi chú: <strong>${
+            updatedOrderDetailResult.rows[0].note
+          }</strong></p>
+          <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
+          <p style="color: red; font-weight: bold;">
+              Quý khách vui lòng thanh toán trong 24h kể từ thời gian booking. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
+          </p>
+      </div>
+      <h4 style="font-weight: bold; font-size: 1.6rem;">THANH TOÁN</h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Nếu quý khách chưa thanh toán. Để hoàn tất quá trình đặt tour, Quý khách vui lòng đăng nhập vào Trang Web Tour Travel và bấm vào chi tiết đơn đặt hàng trong phần thông tin cá nhân và chọn phương thức thanh toán.</p>
+          <p>Nếu quý khách đã thanh toán vui lòng bỏ qua email này.</p>
+          <p>Quý khách có thể kiểm tra thông tin chi tiết về đơn hàng của mình bằng cách đăng nhập vào tài khoản của mình trên trang web của chúng tôi.</p>
+          <p>Nếu Quý khách có bất kỳ câu hỏi nào, xin vui lòng liên hệ với chúng tôi qua email này.</p>
+      </div>
+      <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
+      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
+          <p>Khách hàng: <strong>${
+            updatedOrderDetailResult.rows[0].customer_name
+          }</strong></p>
+          <p>Email: <strong>${
+            updatedOrderDetailResult.rows[0].email
+          }</strong></p>
+          <p>SĐT: <strong>${
+            updatedOrderDetailResult.rows[0].phone_number
+          }</strong></p>
+          <p>Địa chỉ: <strong>${
+            updatedOrderDetailResult.rows[0].address
+          }</strong></p>
+      </div>
+            `,
+       };
+
+       transporter.sendMail(mailOptions, function (error, info) {
+         if (error) {
+           console.log("Gửi email không thành công:", error);
+         } else {
+           console.log("Email xác nhận đã được gửi: " + info.response);
+         }
+       });
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
       res.status(500).json({
@@ -859,6 +913,79 @@ app.post(
     }
   }
 );
+
+app.post(
+  "/payment-tour-momopay/:code_order/:total_price",
+  authenticateToken,
+  async (req, res) => {
+    const { total_price, code_order } = req.params;
+    const { paymentMethod } = req.body;
+
+    try {
+      const requestId = `${Date.now()}`;
+      const orderId = `${code_order}-${Date.now()}`;
+      const orderInfo = `Thanh toan cho don hang ${code_order}`;
+      const amount = total_price.toString();
+      const extraData = "";
+      // const requestType = "captureWallet";
+      // const requestType = "payWithATM";
+      const requestType = paymentMethod;
+
+      const returnUrl = `http://localhost:3000/checkout`;
+
+      const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
+      const signature = crypto
+        .createHmac("sha256", momoConfig.secretKey)
+        .update(rawSignature)
+        .digest("hex");
+
+      const requestBody = {
+        partnerCode: momoConfig.partnerCode,
+        partnerName: "Test",
+        storeId: "MomoTestStore",
+        requestId: requestId,
+        amount: amount,
+        orderId: orderId,
+        orderInfo: orderInfo,
+        redirectUrl: returnUrl,
+        ipnUrl: momoConfig.notifyUrl,
+        lang: "vi",
+        requestType: requestType,
+        autoCapture: true,
+        extraData: extraData,
+        orderGroupId: "",
+        signature: signature,
+      };
+
+      const paymentResponse = await axios.post(
+        momoConfig.endpoint,
+        requestBody,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        }
+      );
+      console.log(paymentResponse.data);
+
+      if (paymentResponse.data.resultCode !== 0) {
+        return res
+          .status(500)
+          .json({ message: "Tạo thanh toán không thành công." });
+      }
+       res.status(201).json({
+         payment_url: paymentResponse.data.payUrl,
+       });
+    } catch (error) {
+      console.error("Tạo thanh toán không thành công:", error);
+      res.status(500).json({
+        message: "Tạo thanh toán không thành công. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+
+
 
 //-----------------------------------------------
 
@@ -878,10 +1005,14 @@ app.post("/momo/webhook", async (req, res) => {
     extraData,
     signature,
   } = req.body;
-  console.log("callback: ");
-  console.log(req.body);
-
+  // console.log("callback: ");
+  // console.log(req.body);
+  const currentDateTime = moment()
+    .tz("Asia/Ho_Chi_Minh")
+    .format("YYYY-MM-DD HH:mm:ss");
   try {
+        const originalOrderId = orderId.split("-")[0];
+
     if (resultCode === 0) {
       const updateOrderQuery = `
         UPDATE orders
@@ -889,9 +1020,9 @@ app.post("/momo/webhook", async (req, res) => {
         WHERE code_order = $1
       `;
 
-      await pool.query(updateOrderQuery, [orderId]);
+      await pool.query(updateOrderQuery, [originalOrderId]);
 
-      const method = partnerCode +" "+ payType;
+      const method = partnerCode + " " + payType;
       const paymentQuery = `
         INSERT INTO payments (
           order_id,
@@ -909,13 +1040,13 @@ app.post("/momo/webhook", async (req, res) => {
       `;
 
       await pool.query(paymentQuery, [
-        orderId,
+        originalOrderId,
         currentDateTime,
         amount,
         method,
       ]);
 
-      const orderDetailQuery = `
+         const orderDetailQuery = `
         SELECT 
           o.order_id,
           o.tour_id,
@@ -947,15 +1078,15 @@ app.post("/momo/webhook", async (req, res) => {
         JOIN accounts a ON c.account_id = a.account_id
         WHERE o.code_order = $1
       `;
-      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-        orderId,
-      ]);
+         const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+           originalOrderId,
+         ]);
 
-      const mailOptions = {
-        from: "Tour Travel <your-email@gmail.com>",
-        to: updatedOrderDetailResult.rows[0].email,
-        subject: "Thanh Toán Thành Công",
-        html: `
+         const mailOptions = {
+           from: "Tour Travel <your-email@gmail.com>",
+           to: updatedOrderDetailResult.rows[0].email,
+           subject: "Thanh Toán Thành Công",
+           html: `
              <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
     <div style="background: #84ffff; border: 5px solid #00796b;">
         <p style="text-align: center; padding: 2rem; color: black;">
@@ -987,10 +1118,10 @@ app.post("/momo/webhook", async (req, res) => {
         <p>Số lượng Người lớn: <strong>${
           updatedOrderDetailResult.rows[0].adult_quantity
         }</strong>, Trẻ em: <strong>${
-          updatedOrderDetailResult.rows[0].child_quantity
-        }</strong>, Trẻ nhỏ: <strong>${
-          updatedOrderDetailResult.rows[0].infant_quantity
-        }</strong></p>
+             updatedOrderDetailResult.rows[0].child_quantity
+           }</strong>, Trẻ nhỏ: <strong>${
+             updatedOrderDetailResult.rows[0].infant_quantity
+           }</strong></p>
         <p>
             Tổng tiền: 
             <span style="color: red; font-weight: bold; font-size: 1.3rem;">
@@ -1019,15 +1150,17 @@ app.post("/momo/webhook", async (req, res) => {
         }</strong></p>
     </div>
           `,
-      };
+         };
 
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.log("Gửi email không thành công:", error);
-        } else {
-          console.log("Email xác nhận đã được gửi: " + info.response);
-        }
-      });
+         transporter.sendMail(mailOptions, function (error, info) {
+           if (error) {
+             console.log("Gửi email không thành công:", error);
+           } else {
+             console.log("Email xác nhận đã được gửi: " + info.response);
+           }
+         });
+
+   
     }
 
     res.status(200).json({ message: "success" });
@@ -1036,7 +1169,6 @@ app.post("/momo/webhook", async (req, res) => {
     res.status(500).json({ message: "failed" });
   }
 });
-
 
 //-----------------------------------------------
 

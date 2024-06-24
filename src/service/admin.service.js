@@ -276,22 +276,24 @@ app.post(
     const accountId = req.params.account_id;
     const adminId = req.params.adminId;
     const { title, content, newscategory_id } = req.body;
-
+const currentDateTime = moment()
+  .tz("Asia/Ho_Chi_Minh")
+  .format("YYYY-MM-DD HH:mm:ss");
     try {
       let query = "";
       if (req.query.role === "3") {
         query = `
           INSERT INTO news (title, content, newscategory_id, posted_by_id_business, created_at, status, posted_by_type)
-          VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'business')
+          VALUES ($1, $2, $3, $4, $5, 'Pending', 'business')
           RETURNING news_id`;
       } else {
         query = `
           INSERT INTO news (title, content, newscategory_id, posted_by_id_admin, created_at, status, posted_by_type)
-          VALUES ($1, $2, $3, $4, NOW(), 'Pending', 'admin')
+          VALUES ($1, $2, $3, $4, $5, 'Confirm', 'admin')
           RETURNING news_id`;
       }
 
-      const newsInsertValues = [title, content, newscategory_id, accountId];
+      const newsInsertValues = [title, content, newscategory_id, accountId,currentDateTime];
       const newsInsertResult = await pool.query(query, newsInsertValues);
       const newsId = newsInsertResult.rows[0].news_id;
 
@@ -307,12 +309,13 @@ app.post(
       if (adminId) {
         const adminActionQuery = `
         INSERT INTO admin_actions (admin_id, object_id, action, action_time, object_type)
-        VALUES ($1, $2, $3, NOW(), $4)
+        VALUES ($1, $2, $3, $4, $5)
       `;
         await pool.query(adminActionQuery, [
           adminId,
           newsId,
           "Thêm bài đăng tin tức !",
+          currentDateTime,
           "news",
         ]);
       }
@@ -817,10 +820,6 @@ app.get("/list-admin-actions", async (req, res) => {
 });
 
 
-
-
-
-
 app.get("/list-orders/:status", authenticateToken, async (req, res) => {
   const { status } = req.params;
   try {
@@ -880,7 +879,7 @@ cron.schedule("0 * * * *", async () => {
   const cancelOrderQuery = `
     UPDATE orders
     SET status = 'Cancel'
-    WHERE status_payment != 'Paid' AND date_time_confirm <= $1 AND status != 'Cancel'
+    WHERE status_payment != 'Paid' AND booking_date_time <= $1 AND status != 'Cancel'
   `;
 
   try {

@@ -230,6 +230,9 @@ app.post(
   authenticateToken,
   upload.array("images"),
   async (req, res) => {
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
     try {
       const business_id = req.params.business_id;
       const {
@@ -256,7 +259,7 @@ app.post(
 
       const newTour = await pool.query(
         `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, business_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, $13)
             RETURNING tour_id`,
         [
           name,
@@ -271,6 +274,7 @@ app.post(
           hotel,
           tourcategory_id,
           business_id,
+          currentDateTime
         ]
       );
 
@@ -400,6 +404,9 @@ app.put(
         location_departure_id,
         destination_locations,
       } = req.body;
+      const currentDateTime = moment()
+        .tz("Asia/Ho_Chi_Minh")
+        .format("YYYY-MM-DD HH:mm:ss");
 
       const existingTour = await pool.query(
         `SELECT * FROM tours WHERE tour_id = $1`,
@@ -423,9 +430,9 @@ app.put(
             vehicle = $9,
             hotel = $10,
             tourcategory_id = $11,
-            created_at = NOW(),
+            created_at = $12,
             status= 'Active'
-        WHERE tour_id = $12`,
+        WHERE tour_id = $13`,
         [
           name,
           description,
@@ -438,6 +445,7 @@ app.put(
           vehicle,
           hotel,
           tourcategory_id,
+          currentDateTime,
           tour_id,
         ]
       );
@@ -861,110 +869,16 @@ app.put(
 
       const query = `
         UPDATE orders 
-        SET status = $1, date_time_confirm = $2
-        WHERE order_id = $3
+        SET status = $1
+        WHERE order_id = $2
       `;
-      await pool.query(query, [status, currentDateTime, orderId]);
+      await pool.query(query, [status, orderId]);
 
       const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
         orderId,
       ]);
 
-      if (status === "Confirm") {
-        const mailOptions = {
-          from: "Tour Travel <your-email@gmail.com>",
-          to: updatedOrderDetailResult.rows[0].email,
-          subject: "Yêu Cầu Thanh Toán",
-          html: `
-             <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
-    <div style="background: #84ffff; border: 5px solid #00796b;">
-        <p style="text-align: center; padding: 2rem; color: black;">
-            Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
-            <br />
-            Booking của quý khách đã được chúng tôi xác nhận thành công!
-        </p>
-    </div>
-    <h4 style="font-size: 1.5rem;">
-        Phiếu xác nhận booking 
-        <span style="border: 3px solid red; color: red;">
-            CHƯA THANH TOÁN
-        </span>
-    </h4>
-    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-        <p>Mã booking: <strong>${
-          updatedOrderDetailResult.rows[0].code_order
-        }</strong></p>
-        <p>Tên Tour: <strong>${
-          updatedOrderDetailResult.rows[0].tour_name
-        }</strong></p>
-        <p>Ngày đi: <strong>${formatDate1(
-          updatedOrderDetailResult.rows[0].start_date
-        )}</strong></p>
-        <p>Điểm khởi hành: <strong>${
-          updatedOrderDetailResult.rows[0].location_name
-        }</strong></p>
-        <p>Số lượng Người lớn: <strong>${
-          updatedOrderDetailResult.rows[0].adult_quantity
-        }</strong>, Trẻ em: <strong>${
-            updatedOrderDetailResult.rows[0].child_quantity
-          }</strong>, Trẻ nhỏ: <strong>${
-            updatedOrderDetailResult.rows[0].infant_quantity
-          }</strong></p>
-        <p>
-            Tổng tiền: 
-            <span style="color: red; font-weight: bold; font-size: 1.3rem;">
-                ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
-            </span>
-        </p>
-        <p>Ngày booking: <strong>${formatDate(
-          updatedOrderDetailResult.rows[0].booking_date_time
-        )}</strong></p>
-        <p>Ghi chú: <strong>${
-          updatedOrderDetailResult.rows[0].note
-        }</strong></p>
-        <p>Thời gian xác nhận: <strong>${currentDateTime}</strong></p>
-        <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
-        <p style="color: red; font-weight: bold;">
-            Quý khách vui lòng thanh toán trong 24h kể từ thời gian xác nhận. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
-        </p>
-    </div>
-    <h4 style="font-weight: bold; font-size: 1.6rem;">THANH TOÁN</h4>
-    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-        <p>Để hoàn tất quá trình đặt tour, Quý khách vui lòng chuyển khoản số tiền cần thanh toán vào tài khoản ngân hàng sau:</p>
-        <p><strong>Số tài khoản:</strong> 0471000331055</p>
-        <p><strong>Ngân hàng:</strong> VietcomBank</p>
-        <p><strong>Tên tài khoản:</strong> NGUYEN MINH HIEU</p>
-        <p>Xin vui lòng ghi rõ họ tên, mã số booking <strong>${
-          updatedOrderDetailResult.rows[0].code_order
-        }</strong> trong phần ghi chú khi chuyển khoản.</p>
-        <p>Quý khách có thể kiểm tra thông tin chi tiết về đơn hàng của mình bằng cách đăng nhập vào tài khoản của mình trên trang web của chúng tôi.</p>
-        <p>Nếu Quý khách có bất kỳ câu hỏi nào, xin vui lòng liên hệ với chúng tôi qua email này.</p>
-    </div>
-    <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
-    <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-        <p>Khách hàng: <strong>${
-          updatedOrderDetailResult.rows[0].customer_name
-        }</strong></p>
-        <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
-        <p>SĐT: <strong>${
-          updatedOrderDetailResult.rows[0].phone_number
-        }</strong></p>
-        <p>Địa chỉ: <strong>${
-          updatedOrderDetailResult.rows[0].address
-        }</strong></p>
-    </div>
-          `,
-        };
-
-        transporter.sendMail(mailOptions, function (error, info) {
-          if (error) {
-            console.log("Gửi email không thành công:", error);
-          } else {
-            console.log("Email xác nhận đã được gửi: " + info.response);
-          }
-        });
-      }
-
+   
       res.status(200).json({
         message: "Order status updated successfully",
         order: updatedOrderDetailResult.rows[0],
