@@ -503,8 +503,7 @@ app.post(
         tour.business_id,
         code_order,
       ]);
-            const orderId = orderResult.rows[0].order_id;
-
+      const orderId = orderResult.rows[0].order_id;
 
       const updateTourQuery = `
       UPDATE tours 
@@ -518,7 +517,7 @@ app.post(
         order: orderResult.rows[0],
       });
 
-       const orderDetailQuery = `
+      const orderDetailQuery = `
         SELECT 
           o.order_id,
           o.tour_id,
@@ -550,13 +549,15 @@ app.post(
         JOIN accounts a ON c.account_id = a.account_id
         WHERE o.order_id = $1
       `;
-        const updatedOrderDetailResult = await pool.query(orderDetailQuery, [orderId]);
+      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+        orderId,
+      ]);
 
-          const mailOptions = {
-            from: "Tour Travel <your-email@gmail.com>",
-            to: updatedOrderDetailResult.rows[0].email,
-            subject: "Yêu Cầu Thanh Toán",
-            html: `
+      const mailOptions = {
+        from: "Tour Travel <your-email@gmail.com>",
+        to: updatedOrderDetailResult.rows[0].email,
+        subject: "Yêu Cầu Thanh Toán",
+        html: `
                <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
       <div style="background: #84ffff; border: 5px solid #00796b;">
           <p style="text-align: center; padding: 2rem; color: black;">
@@ -587,10 +588,10 @@ app.post(
           <p>Số lượng Người lớn: <strong>${
             updatedOrderDetailResult.rows[0].adult_quantity
           }</strong>, Trẻ em: <strong>${
-              updatedOrderDetailResult.rows[0].child_quantity
-            }</strong>, Trẻ nhỏ: <strong>${
-              updatedOrderDetailResult.rows[0].infant_quantity
-            }</strong></p>
+          updatedOrderDetailResult.rows[0].child_quantity
+        }</strong>, Trẻ nhỏ: <strong>${
+          updatedOrderDetailResult.rows[0].infant_quantity
+        }</strong></p>
           <p>
               Tổng tiền:
               <span style="color: red; font-weight: bold; font-size: 1.3rem;">
@@ -620,7 +621,9 @@ app.post(
           <p>Khách hàng: <strong>${
             updatedOrderDetailResult.rows[0].customer_name
           }</strong></p>
-          <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
+          <p>Email: <strong>${
+            updatedOrderDetailResult.rows[0].email
+          }</strong></p>
           <p>SĐT: <strong>${
             updatedOrderDetailResult.rows[0].phone_number
           }</strong></p>
@@ -629,16 +632,15 @@ app.post(
           }</strong></p>
       </div>
             `,
-          };
+      };
 
-          transporter.sendMail(mailOptions, function (error, info) {
-            if (error) {
-              console.log("Gửi email không thành công:", error);
-            } else {
-              console.log("Email xác nhận đã được gửi: " + info.response);
-            }
-          });
-        
+      transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+          console.log("Gửi email không thành công:", error);
+        } else {
+          console.log("Email xác nhận đã được gửi: " + info.response);
+        }
+      });
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
       res.status(500).json({
@@ -656,7 +658,7 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   notifyUrl:
-    "https://cb0f-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://12c2-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -719,7 +721,7 @@ app.post(
       ]);
 
       const order = orderResult.rows[0];
-        const order_Id = orderResult.rows[0].order_id;
+      const order_Id = orderResult.rows[0].order_id;
 
       const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
@@ -780,8 +782,8 @@ app.post(
         order: order,
         payment_url: paymentResponse.data.payUrl,
       });
-      
-       const orderDetailQuery = `
+
+      const orderDetailQuery = `
         SELECT 
           o.order_id,
           o.tour_id,
@@ -813,15 +815,15 @@ app.post(
         JOIN accounts a ON c.account_id = a.account_id
         WHERE o.order_id = $1
       `;
-       const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-         order_Id,
-       ]);
+      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+        order_Id,
+      ]);
 
-       const mailOptions = {
-         from: "Tour Travel <your-email@gmail.com>",
-         to: updatedOrderDetailResult.rows[0].email,
-         subject: "Yêu Cầu Thanh Toán",
-         html: `
+      const mailOptions = {
+        from: "Tour Travel <your-email@gmail.com>",
+        to: updatedOrderDetailResult.rows[0].email,
+        subject: "Yêu Cầu Thanh Toán",
+        html: `
                <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
       <div style="background: #84ffff; border: 5px solid #00796b;">
           <p style="text-align: center; padding: 2rem; color: black;">
@@ -852,10 +854,10 @@ app.post(
           <p>Số lượng Người lớn: <strong>${
             updatedOrderDetailResult.rows[0].adult_quantity
           }</strong>, Trẻ em: <strong>${
-           updatedOrderDetailResult.rows[0].child_quantity
-         }</strong>, Trẻ nhỏ: <strong>${
-           updatedOrderDetailResult.rows[0].infant_quantity
-         }</strong></p>
+          updatedOrderDetailResult.rows[0].child_quantity
+        }</strong>, Trẻ nhỏ: <strong>${
+          updatedOrderDetailResult.rows[0].infant_quantity
+        }</strong></p>
           <p>
               Tổng tiền:
               <span style="color: red; font-weight: bold; font-size: 1.3rem;">
@@ -896,15 +898,15 @@ app.post(
           }</strong></p>
       </div>
             `,
-       };
+      };
 
-       transporter.sendMail(mailOptions, function (error, info) {
-         if (error) {
-           console.log("Gửi email không thành công:", error);
-         } else {
-           console.log("Email xác nhận đã được gửi: " + info.response);
-         }
-       });
+      transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+          console.log("Gửi email không thành công:", error);
+        } else {
+          console.log("Email xác nhận đã được gửi: " + info.response);
+        }
+      });
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
       res.status(500).json({
@@ -966,16 +968,15 @@ app.post(
           },
         }
       );
-      console.log(paymentResponse.data);
 
       if (paymentResponse.data.resultCode !== 0) {
         return res
           .status(500)
           .json({ message: "Tạo thanh toán không thành công." });
       }
-       res.status(201).json({
-         payment_url: paymentResponse.data.payUrl,
-       });
+      res.status(201).json({
+        payment_url: paymentResponse.data.payUrl,
+      });
     } catch (error) {
       console.error("Tạo thanh toán không thành công:", error);
       res.status(500).json({
@@ -984,8 +985,6 @@ app.post(
     }
   }
 );
-
-
 
 //-----------------------------------------------
 
@@ -1011,7 +1010,7 @@ app.post("/momo/webhook", async (req, res) => {
     .tz("Asia/Ho_Chi_Minh")
     .format("YYYY-MM-DD HH:mm:ss");
   try {
-        const originalOrderId = orderId.split("-")[0];
+    const originalOrderId = orderId.split("-")[0];
 
     if (resultCode === 0) {
       const updateOrderQuery = `
@@ -1046,7 +1045,7 @@ app.post("/momo/webhook", async (req, res) => {
         method,
       ]);
 
-         const orderDetailQuery = `
+      const orderDetailQuery = `
         SELECT 
           o.order_id,
           o.tour_id,
@@ -1078,15 +1077,15 @@ app.post("/momo/webhook", async (req, res) => {
         JOIN accounts a ON c.account_id = a.account_id
         WHERE o.code_order = $1
       `;
-         const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-           originalOrderId,
-         ]);
+      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+        originalOrderId,
+      ]);
 
-         const mailOptions = {
-           from: "Tour Travel <your-email@gmail.com>",
-           to: updatedOrderDetailResult.rows[0].email,
-           subject: "Thanh Toán Thành Công",
-           html: `
+      const mailOptions = {
+        from: "Tour Travel <your-email@gmail.com>",
+        to: updatedOrderDetailResult.rows[0].email,
+        subject: "Thanh Toán Thành Công",
+        html: `
              <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
     <div style="background: #84ffff; border: 5px solid #00796b;">
         <p style="text-align: center; padding: 2rem; color: black;">
@@ -1118,10 +1117,10 @@ app.post("/momo/webhook", async (req, res) => {
         <p>Số lượng Người lớn: <strong>${
           updatedOrderDetailResult.rows[0].adult_quantity
         }</strong>, Trẻ em: <strong>${
-             updatedOrderDetailResult.rows[0].child_quantity
-           }</strong>, Trẻ nhỏ: <strong>${
-             updatedOrderDetailResult.rows[0].infant_quantity
-           }</strong></p>
+          updatedOrderDetailResult.rows[0].child_quantity
+        }</strong>, Trẻ nhỏ: <strong>${
+          updatedOrderDetailResult.rows[0].infant_quantity
+        }</strong></p>
         <p>
             Tổng tiền: 
             <span style="color: red; font-weight: bold; font-size: 1.3rem;">
@@ -1150,17 +1149,15 @@ app.post("/momo/webhook", async (req, res) => {
         }</strong></p>
     </div>
           `,
-         };
+      };
 
-         transporter.sendMail(mailOptions, function (error, info) {
-           if (error) {
-             console.log("Gửi email không thành công:", error);
-           } else {
-             console.log("Email xác nhận đã được gửi: " + info.response);
-           }
-         });
-
-   
+      transporter.sendMail(mailOptions, function (error, info) {
+        if (error) {
+          console.log("Gửi email không thành công:", error);
+        } else {
+          console.log("Email xác nhận đã được gửi: " + info.response);
+        }
+      });
     }
 
     res.status(200).json({ message: "success" });
@@ -1243,6 +1240,49 @@ app.get(
     } catch (error) {
       console.error("Lỗi khi lấy danh sách đơn hàng:", error);
       res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
+    }
+  }
+);
+app.post(
+  "/rate-tour/:customerId/:tourId/:code_order",
+  authenticateToken,
+  async (req, res) => {
+    const { customerId, tourId, code_order } = req.params;
+    const { rating, review } = req.body;
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
+    try {
+      const ratingQuery = `
+        INSERT INTO ratings (customer_id, tour_id, rating, review, date_rating)
+        VALUES ($1, $2, $3, $4, $5)
+        RETURNING *
+      `;
+
+      const ratingResult = await pool.query(ratingQuery, [
+        customerId,
+        tourId,
+        rating,
+        review,
+        currentDateTime,
+      ]);
+      const updateOrderQuery = `
+        UPDATE orders
+        SET status_rating = 'Rated'
+        WHERE code_order = $1 
+      `;
+
+      await pool.query(updateOrderQuery, [code_order]);
+
+      res.status(201).json({
+        message: "Đánh giá đã được ghi nhận thành công!",
+        rating: ratingResult.rows[0],
+      });
+    } catch (error) {
+      console.error("Lỗi khi ghi nhận đánh giá:", error);
+      res
+        .status(500)
+        .json({ message: "Lỗi khi ghi nhận đánh giá. Vui lòng thử lại sau." });
     }
   }
 );

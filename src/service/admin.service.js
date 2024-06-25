@@ -612,21 +612,6 @@ const updateTourStatuses = async () => {
 
 cron.schedule("0 0 * * *", updateTourStatuses);
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 app.get("/report-list", async (req, res) => {
   try {
     const reportQuery = await pool.query(`
@@ -1060,5 +1045,42 @@ app.put(
   }
 );
 
+// -----------------------------------------------
+
+
+const updateOrders = async () => {
+  try {
+    const currentDate = new Date();
+
+    const toursQuery = `
+      SELECT tour_id 
+      FROM tours 
+      WHERE end_date < $1
+    `;
+    const toursResult = await client.query(toursQuery, [currentDate]);
+
+    const tourIds = toursResult.rows.map((row) => row.tour_id);
+
+    if (tourIds.length > 0) {
+      const updateQuery = `
+        UPDATE orders 
+        SET status = 'Complete' 
+        WHERE tour_id = ANY($1) 
+        AND status = 'Confirm'
+      `;
+      await client.query(updateQuery, [tourIds]);
+      console.log("Orders updated successfully");
+    } else {
+      console.log("No tours to update");
+    }
+  } catch (error) {
+    console.error("Error updating orders:", error);
+  }
+};
+
+cron.schedule("0 0 * * *", () => {
+  console.log("Running cron job to update complete orders");
+  updateOrders();
+});
 // -----------------------------------------------
 module.exports = app;
