@@ -20,9 +20,7 @@ const formatDate = (
   return moment(date).tz(timezone).format(format);
 };
 
-const currentDateTime = moment()
-  .tz("Asia/Ho_Chi_Minh")
-  .format("YYYY-MM-DD HH:mm:ss");
+
 
 const formatDate1 = (
   date,
@@ -485,8 +483,9 @@ app.post(
         business_id, 
         code_order, 
         status, 
-        status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated') RETURNING *
+        status_rating,
+        status_request_cancel
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated', 'No') RETURNING *
     `;
 
       const code_order = generateRandomCode(10);
@@ -702,8 +701,8 @@ app.post(
       INSERT INTO orders (
         tour_id, adult_quantity, child_quantity, infant_quantity, total_price,
         status_payment, booking_date_time, note, customer_id, business_id, 
-        code_order, status, status_rating
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated')
+        code_order, status, status_rating, status_request_cancel
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated', 'No')
       RETURNING *
     `;
 
@@ -731,8 +730,6 @@ app.post(
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
       const amount = total_price.toString();
       const extraData = "";
-      // const requestType = "captureWallet";
-      // const requestType = "payWithATM";
       const requestType = paymentMethod;
 
       const returnUrl = `http://localhost:3000/checkout`;
@@ -929,8 +926,7 @@ app.post(
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
       const amount = total_price.toString();
       const extraData = "";
-      // const requestType = "captureWallet";
-      // const requestType = "payWithATM";
+  
       const requestType = paymentMethod;
 
       const returnUrl = `http://localhost:3000/checkout`;
@@ -1286,6 +1282,113 @@ app.post(
     }
   }
 );
+
+app.post(
+  "/request-cancellation/:orderId/:businessId/:customerId",
+  authenticateToken,
+  async (req, res) => {
+    const { orderId, businessId, customerId } = req.params;
+    const { reason } = req.body;
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
+    try {
+        const customerQuery = `
+        SELECT bank_account_name, bank_account_number, bank_name 
+        FROM customers 
+        WHERE customer_id = $1
+      `;
+        const customerResult = await pool.query(customerQuery, [customerId]);
+
+        if (customerResult.rows.length === 0) {
+          return res.status(404).json({ message: "Khách hàng không tồn tại" });
+        }
+
+        const customer = customerResult.rows[0];
+        if (
+          !customer.bank_account_name ||
+          !customer.bank_account_number ||
+          !customer.bank_name
+        ) {
+          return res.status(400).json({
+            message:
+              "Khách hàng chưa điền đầy đủ thông tin tài khoản ngân hàng trong hồ sơ cá nhân.",
+          });
+        }
+
+      const cancellationRequestQuery = `
+        INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
+        VALUES ($1, $2, $3, 'Pending', 'No', $4, $5)
+        RETURNING *
+      `;
+
+      const cancellationRequestResult = await pool.query(
+        cancellationRequestQuery,
+        [orderId,currentDateTime, reason, businessId, customerId]
+      );
+
+        const updateOrderQuery = `
+      UPDATE orders 
+      SET status_request_cancel = 'Yes' 
+      WHERE order_id = $1
+    `;
+        await pool.query(updateOrderQuery, [orderId]);
+
+      res.status(201).json({
+        message: "Yêu cầu hủy đơn hàng đã được ghi nhận thành công!",
+        cancellationRequest: cancellationRequestResult.rows[0],
+      });
+    } catch (error) {
+      console.error("Lỗi khi ghi nhận yêu cầu hủy đơn hàng:", error);
+      res
+        .status(500)
+        .json({
+          message:
+            "Lỗi khi ghi nhận yêu cầu hủy đơn hàng. Vui lòng thử lại sau.",
+        });
+    }
+  }
+);
+
+app.get("/list-cancellation-requests", authenticateToken, async (req, res) => {
+  const { customerId, businessId } = req.query;
+
+  try {
+    let query = `
+      SELECT 
+        cr.*,
+        o.code_order
+      FROM cancellation_request cr
+      LEFT JOIN orders o ON cr.order_id= o.order_id
+    `;
+    const queryParams = [];
+
+    if (customerId) {
+      query += " WHERE cr.customer_id = $1";
+      queryParams.push(customerId);
+    } else if (businessId) {
+      query += " WHERE cr.business_id = $1";
+      queryParams.push(businessId);
+    } else {
+      return res
+        .status(400)
+        .json({ message: "Vui lòng cung cấp customerId hoặc businessId" });
+    }
+
+    const result = await pool.query(query, queryParams);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy yêu cầu hủy" });
+    }
+
+    res.status(200).json(result.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách yêu cầu hủy:", error);
+    res.status(500).json({ message: "Lỗi khi lấy danh sách yêu cầu hủy" });
+  }
+});
+
+
 
 // -----------------------------------------------
 module.exports = app;

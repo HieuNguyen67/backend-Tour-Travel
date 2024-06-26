@@ -763,6 +763,9 @@ app.get("/pending-count-status-contact-business", (req, res) => {
 app.get("/pending-count-status-orders", (req, res) => {
   getPendingCount("orders", "Pending", res);
 });
+app.get("/pending-count-status-request-cancel", (req, res) => {
+  getPendingCount("cancellation_request", "Pending", res);
+});
 
 
 

@@ -828,64 +828,136 @@ app.put(
     const { orderId } = req.params;
     const { status } = req.body;
     try {
-      const orderDetailQuery = `
-        SELECT 
-          o.order_id,
-          o.tour_id,
-          t.name AS tour_name,
-          t.start_date,
-          o.adult_quantity,
-          o.child_quantity,
-          o.infant_quantity,
-          o.total_price,
-          o.status_payment,
-          o.booking_date_time,
-          o.note,
-          o.customer_id,
-          c.account_id,
-          a.name AS customer_name,
-          a.phone_number,
-          a.email,
-          a.address,
-          o.business_id,
-          o.code_order,
-          o.status,
-          o.status_rating,
-          l.location_name
-        FROM orders o
-        JOIN tours t ON o.tour_id = t.tour_id
-        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
-        JOIN customers c ON o.customer_id = c.customer_id
-        JOIN accounts a ON c.account_id = a.account_id
-        WHERE o.order_id = $1
-      `;
-
-      const orderDetailResult = await pool.query(orderDetailQuery, [orderId]);
-
-      if (orderDetailResult.rows.length === 0) {
-        return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
-      }
-
+     
       const query = `
         UPDATE orders 
         SET status = $1
         WHERE order_id = $2
       `;
       await pool.query(query, [status, orderId]);
-
-      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-        orderId,
-      ]);
-
    
       res.status(200).json({
         message: "Order status updated successfully",
-        order: updatedOrderDetailResult.rows[0],
       });
     } catch (error) {
       console.error("Failed to update Order status:", error);
       res.status(500).json({ message: "Failed to update Order status" });
+    }
+  }
+);
+
+app.post(
+  "/update-cancellation-status/:requestId",
+  authenticateToken,
+  async (req, res) => {
+    const { requestId } = req.params;
+    const { status } = req.body;
+
+    try {
+      const cancellationRequestQuery = `
+        SELECT * FROM cancellation_request WHERE request_id = $1
+      `;
+      const cancellationRequestResult = await pool.query(
+        cancellationRequestQuery,
+        [requestId]
+      );
+
+      if (cancellationRequestResult.rows.length === 0) {
+        return res.status(404).json({ message: "Yêu cầu hủy không tồn tại" });
+      }
+
+      const cancellationRequest = cancellationRequestResult.rows[0];
+
+      const orderQuery = `
+        SELECT * FROM orders WHERE order_id = $1
+      `;
+      const orderResult = await pool.query(orderQuery, [
+        cancellationRequest.order_id,
+      ]);
+
+      if (orderResult.rows.length === 0) {
+        return res.status(404).json({ message: "Đơn hàng không tồn tại" });
+      }
+
+      const order = orderResult.rows[0];
+
+      const tourQuery = `
+        SELECT * FROM tours WHERE tour_id = $1
+      `;
+      const tourResult = await pool.query(tourQuery, [order.tour_id]);
+
+      if (tourResult.rows.length === 0) {
+        return res.status(404).json({ message: "Tour không tồn tại" });
+      }
+
+      const tour = tourResult.rows[0];
+
+      if (status === "Confirm") {
+        const startDate = new Date(tour.start_date);
+        const requestDate = new Date(cancellationRequest.request_date);
+        const diffTime = Math.abs(startDate - requestDate);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        const policyQuery = `
+          SELECT * FROM policy_cancellation WHERE business_id = $1 AND days_before_departure >= $2
+          ORDER BY days_before_departure ASC LIMIT 1
+        `;
+        const policyResult = await pool.query(policyQuery, [
+          cancellationRequest.business_id,
+          diffDays,
+        ]);
+
+        if (policyResult.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ message: "Chính sách hủy không tồn tại" });
+        }
+
+        const policy = policyResult.rows[0];
+
+        const refundAmount =
+          (order.total_price * policy.refund_percentage) / 100;
+
+        const updateCancellationRequestQuery = `
+          UPDATE cancellation_request
+          SET status = 'Confirm'
+          WHERE request_id = $1
+        `;
+        await pool.query(updateCancellationRequestQuery, [requestId]);
+
+        const refundQuery = `
+          INSERT INTO refunds (request_id, refund_amount, refund_date, status)
+          VALUES ($1, $2, NOW(), 'Pending')
+          RETURNING *
+        `;
+        const refundResult = await pool.query(refundQuery, [
+          requestId,
+          refundAmount,
+        ]);
+
+        res.status(201).json({
+          message: "Yêu cầu hủy đã được xác nhận và gửi yêu cầu hoàn tiền thành công!",
+          refund: refundResult.rows[0],
+        });
+      } else {
+        const updateCancellationRequestQuery = `
+          UPDATE cancellation_request
+          SET status = $1
+          WHERE request_id = $2
+        `;
+        await pool.query(updateCancellationRequestQuery, [status, requestId]);
+
+        res.status(200).json({
+          message: `Yêu cầu hủy đã được cập nhật thành ${status}.`,
+        });
+      }
+    } catch (error) {
+      console.error("Lỗi khi cập nhật yêu cầu hủy:", error);
+      res
+        .status(500)
+        .json({
+          message: "Lỗi khi cập nhật yêu cầu hủy. Vui lòng thử lại sau.",
+        });
     }
   }
 );

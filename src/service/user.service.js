@@ -574,7 +574,8 @@ app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
         o.business_id,
         o.code_order,
         o.status,
-        o.status_rating
+        o.status_rating,
+        o.status_request_cancel
       FROM orders o
       JOIN tours t ON o.tour_id = t.tour_id
       JOIN customers c ON o.customer_id = c.customer_id
@@ -636,5 +637,52 @@ app.get("/payment-detail/:orderId", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy chi tiết thanh toán" });
   }
 });
+
+app.get(
+  "/detail-cancellation-request/:requestId",
+  authenticateToken,
+  async (req, res) => {
+    const { requestId } = req.params;
+
+    try {
+      const query = `
+      SELECT 
+        cr.request_id,
+        cr.order_id,
+        cr.request_date,
+        cr.reason,
+        cr.status,
+        cr.status_refund,
+        cr.customer_id,
+        cr.business_id,
+        o.booking_date_time,
+        o.code_order,
+        t.name AS tour_name,
+        t.start_date,
+        t.end_date,
+        o.status_payment,
+        a.name AS customer_name
+      FROM cancellation_request cr
+      JOIN orders o ON cr.order_id = o.order_id
+      JOIN tours t ON o.tour_id = t.tour_id
+      JOIN customers c ON cr.customer_id = c.customer_id
+      JOIN accounts a ON c.account_id = a.account_id
+      WHERE cr.request_id = $1
+    `;
+
+      const result = await pool.query(query, [requestId]);
+
+      if (result.rows.length === 0) {
+        return res.status(404).json({ message: "Yêu cầu hủy không tồn tại" });
+      }
+
+      res.status(200).json(result.rows[0]);
+    } catch (error) {
+      console.error("Lỗi khi lấy chi tiết yêu cầu hủy:", error);
+      res.status(500).json({ message: "Lỗi khi lấy chi tiết yêu cầu hủy" });
+    }
+  }
+);
+
 // -----------------------------------------------
 module.exports = app;
