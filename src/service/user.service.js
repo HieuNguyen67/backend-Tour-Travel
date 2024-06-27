@@ -661,7 +661,8 @@ app.get(
         t.start_date,
         t.end_date,
         o.status_payment,
-        a.name AS customer_name
+        a.name AS customer_name,
+        o.total_price
       FROM cancellation_request cr
       JOIN orders o ON cr.order_id = o.order_id
       JOIN tours t ON o.tour_id = t.tour_id

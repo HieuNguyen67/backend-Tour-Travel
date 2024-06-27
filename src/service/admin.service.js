@@ -766,6 +766,9 @@ app.get("/pending-count-status-orders", (req, res) => {
 app.get("/pending-count-status-request-cancel", (req, res) => {
   getPendingCount("cancellation_request", "Pending", res);
 });
+app.get("/pending-count-status-refunds", (req, res) => {
+  getPendingCount("refunds", "Pending", res);
+});
 
 
 
@@ -1085,5 +1088,163 @@ cron.schedule("0 0 * * *", () => {
   console.log("Running cron job to update complete orders");
   updateOrders();
 });
+
+app.get("/list-refunds", authenticateToken, async (req, res) => {
+  try {
+    const refundsQuery = `
+      SELECT 
+        r.refund_id,
+        r.request_id,
+        r.refund_amount,
+        r.refund_date,
+        r.status,
+        cr.order_id,
+        cr.reason,
+        cr.customer_id,
+        cr.business_id,
+        o.code_order,
+        o.status_payment
+      FROM refunds r
+      JOIN cancellation_request cr ON r.request_id = cr.request_id
+      LEFT JOIN orders o ON cr.order_id = o.order_id
+    `;
+    const refundsResult = await pool.query(refundsQuery);
+
+    if (refundsResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy yêu cầu hoàn tiền nào." });
+    }
+
+    res.status(200).json(refundsResult.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách yêu cầu hoàn tiền:", error);
+    res
+      .status(500)
+      .json({ message: "Lỗi khi lấy danh sách yêu cầu hoàn tiền." });
+  }
+});
+
+// -----------------------------------------------
+
+app.get("/refunds-detail/:refundId", authenticateToken, async (req, res) => {
+  const { refundId } = req.params;
+
+  try {
+    const refundQuery = `
+      SELECT 
+        r.refund_id,
+        r.request_id,
+        r.refund_amount,
+        r.refund_date,
+        r.status,
+        cr.order_id,
+        cr.request_date,
+        cr.reason,
+        cr.status AS request_status,
+        cr.status_refund,
+        o.customer_id,
+        o.business_id,
+        o.total_price,
+        o.tour_id,
+        o.code_order,
+        o.status_payment,
+        c.bank_account_name,
+        c.bank_account_number,
+        c.bank_name
+      FROM refunds r
+      JOIN cancellation_request cr ON r.request_id = cr.request_id
+      JOIN orders o ON cr.order_id = o.order_id
+      JOIN customers c ON o.customer_id = c.customer_id
+      WHERE r.refund_id = $1
+    `;
+
+    const refundResult = await pool.query(refundQuery, [refundId]);
+
+    if (refundResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy thông tin hoàn tiền" });
+    }
+
+    res.status(200).json(refundResult.rows[0]);
+  } catch (error) {
+    console.error("Lỗi khi lấy thông tin hoàn tiền:", error);
+    res
+      .status(500)
+      .json({
+        message: "Lỗi khi lấy thông tin hoàn tiền. Vui lòng thử lại sau.",
+      });
+  }
+});
+
+//-----------------------------------------------
+
+app.put(
+  "/update-status-refund/:refundId",
+  authenticateToken,
+  async (req, res) => {
+    const { refundId } = req.params;
+    const { status } = req.body;
+ const currentDateTime = moment()
+   .tz("Asia/Ho_Chi_Minh")
+   .format("YYYY-MM-DD HH:mm:ss");
+    try {
+
+      const query = `
+      UPDATE refunds 
+      SET status = $1, refund_date=$2
+      WHERE refund_id = $3
+    `;
+      await pool.query(query, [status, currentDateTime,refundId]);
+        if (status === 'Refunded') {
+
+          const getRequestIdQuery = `
+        SELECT request_id, refund_amount FROM refunds WHERE refund_id = $1
+      `;
+          const requestIdResult = await pool.query(getRequestIdQuery, [
+            refundId,
+          ]);
+          const { request_id, refund_amount } = requestIdResult.rows[0];
+
+            const updateStatusRefundQuery = `
+        UPDATE cancellation_request
+        SET status_refund = 'Yes'
+        WHERE request_id  = $1
+      `;
+            await pool.query(updateStatusRefundQuery, [request_id]);
+
+          const getOrderIdQuery = `
+        SELECT order_id FROM cancellation_request WHERE request_id = $1
+      `;
+          const orderIdResult = await pool.query(getOrderIdQuery, [request_id]);
+          const { order_id } = orderIdResult.rows[0];
+
+          const getTotalPriceQuery = `
+        SELECT total_price FROM orders WHERE order_id = $1
+      `;
+          const totalPriceResult = await pool.query(getTotalPriceQuery, [
+            order_id,
+          ]);
+          const { total_price } = totalPriceResult.rows[0];
+
+          const newTotalPrice = total_price - refund_amount;
+
+          const updateTotalPriceQuery = `
+        UPDATE orders
+        SET total_price = $1, status= 'Cancel'
+        WHERE order_id = $2
+      `;
+          await pool.query(updateTotalPriceQuery, [newTotalPrice, order_id]);
+        }
+
+      res.status(200).json({ message: "Cập nhật trạng thái thành công!" });
+    } catch (error) {
+      console.error("Failed to update refund status:", error);
+      res.status(500).json({ message: "Cập nhật trạng thái thất bại!" });
+    }
+  }
+);
+
 // -----------------------------------------------
 module.exports = app;

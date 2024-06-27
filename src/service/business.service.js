@@ -926,8 +926,8 @@ app.post(
         await pool.query(updateCancellationRequestQuery, [requestId]);
 
         const refundQuery = `
-          INSERT INTO refunds (request_id, refund_amount, refund_date, status)
-          VALUES ($1, $2, NOW(), 'Pending')
+          INSERT INTO refunds (request_id, refund_amount, status)
+          VALUES ($1, $2, 'Pending')
           RETURNING *
         `;
         const refundResult = await pool.query(refundQuery, [
