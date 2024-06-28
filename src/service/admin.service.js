@@ -1098,6 +1098,7 @@ app.get("/list-refunds", authenticateToken, async (req, res) => {
         r.refund_amount,
         r.refund_date,
         r.status,
+        r.note,
         cr.order_id,
         cr.reason,
         cr.customer_id,
@@ -1138,6 +1139,7 @@ app.get("/refunds-detail/:refundId", authenticateToken, async (req, res) => {
         r.refund_amount,
         r.refund_date,
         r.status,
+        r.note,
         cr.order_id,
         cr.request_date,
         cr.reason,
@@ -1246,5 +1248,76 @@ app.put(
   }
 );
 
+//-----------------------------------------------
+
+const updateOrderStatus = async () => {
+  try {
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
+    const past24Hours = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .subtract(24, "hours")
+      .format("YYYY-MM-DD HH:mm:ss");
+
+    const pendingOrdersQuery = `
+      SELECT * FROM orders 
+      WHERE status = 'Pending' 
+      AND status_payment = 'Paid' 
+      AND booking_date_time <= $1
+    `;
+
+    const pendingOrdersResult = await pool.query(pendingOrdersQuery, [
+      past24Hours,
+    ]);
+    const pendingOrders = pendingOrdersResult.rows;
+
+    for (let order of pendingOrders) {
+      const { order_id, total_price, customer_id, business_id } = order;
+
+      const updateOrderStatusQuery = `
+        UPDATE orders 
+        SET status = 'Cancel'
+        WHERE order_id = $1
+      `;
+      await pool.query(updateOrderStatusQuery, [order_id]);
+
+      const createCancellationRequestQuery = `
+        INSERT INTO cancellation_request (
+          order_id, 
+          request_date, 
+          reason, 
+          status, 
+          status_refund, 
+          customer_id, 
+          business_id
+        ) VALUES ($1, $2, 'Doanh nghiệp không hoạt động!', 'Confirm', 'No', $3, $4)
+        RETURNING *
+      `;
+      const cancellationRequestResult = await pool.query(
+        createCancellationRequestQuery,
+        [order_id, currentDateTime, customer_id, business_id]
+      );
+
+      const { request_id } = cancellationRequestResult.rows[0];
+
+      const createRefundQuery = `
+        INSERT INTO refunds (request_id, refund_amount, status, note)
+        VALUES ($1, $2, 'Pending', 'Doanh nghiệp không hoạt động!')
+        RETURNING *
+      `;
+      await pool.query(createRefundQuery, [request_id, total_price]);
+    }
+  } catch (error) {
+    console.error("Failed to update order status and create refunds:", error);
+  }
+};
+
+cron.schedule("0 * * * *", () => {
+  console.log(
+    "Running cron job to update orders pending to cancle within 24 hours"
+  );
+  updateOrderStatus();
+});
 // -----------------------------------------------
 module.exports = app;

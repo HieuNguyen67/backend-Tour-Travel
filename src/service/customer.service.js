@@ -485,7 +485,7 @@ app.post(
         status, 
         status_rating,
         status_request_cancel
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated', 'No') RETURNING *
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No') RETURNING *
     `;
 
       const code_order = generateRandomCode(10);
@@ -702,7 +702,7 @@ app.post(
         tour_id, adult_quantity, child_quantity, infant_quantity, total_price,
         status_payment, booking_date_time, note, customer_id, business_id, 
         code_order, status, status_rating, status_request_cancel
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Confirm', 'Not Rated', 'No')
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No')
       RETURNING *
     `;
 
