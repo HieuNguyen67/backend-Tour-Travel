@@ -610,7 +610,7 @@ const updateTourStatuses = async () => {
   }
 };
 
-cron.schedule("0 0 * * *", updateTourStatuses);
+cron.schedule("0 * * * *", updateTourStatuses);
 
 app.get("/report-list", async (req, res) => {
   try {
@@ -730,13 +730,11 @@ app.put(
 
 const getPendingCount = async (table, status, res) => {
   try {
-    const client = await pool.connect();
-    const result = await client.query(
+    const result = await pool.query(
       `SELECT COUNT(*) FROM ${table} WHERE status = $1`,
       [status]
     );
     const count = result.rows[0].count;
-    client.release();
     res.json({ count });
   } catch (error) {
     console.error(`Error executing query for table ${table}:`, error);
@@ -754,21 +752,122 @@ app.get("/pending-count-status-report", (req, res) => {
 app.get("/pending-count-status-news", (req, res) => {
   getPendingCount("news", "Pending", res);
 });
-app.get("/pending-count-status-tour", (req, res) => {
-  getPendingCount("tours", "Inactive", res);
-});
-app.get("/pending-count-status-contact-business", (req, res) => {
-  getPendingCount("contacts_business", "Pending", res);
-});
-app.get("/pending-count-status-orders", (req, res) => {
-  getPendingCount("orders", "Pending", res);
-});
-app.get("/pending-count-status-request-cancel", (req, res) => {
-  getPendingCount("cancellation_request", "Pending", res);
-});
 app.get("/pending-count-status-refunds", (req, res) => {
   getPendingCount("refunds", "Pending", res);
 });
+const getPendingCountBusiness = async (table, status,business_id, res) => {
+
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) FROM ${table} WHERE status = $1 AND business_id= $2`,
+      [status, business_id]
+    );
+    const count = result.rows[0].count;
+    res.json({ count });
+  } catch (error) {
+    console.error(`Error executing query for table ${table}:`, error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+app.get("/pending-count-status-tour/:business_id", (req, res) => {
+          const business_id = req.params.business_id;
+
+  getPendingCountBusiness("tours", "Inactive", business_id, res);
+});
+app.get("/pending-count-status-contact-business/:business_id", (req, res) => {
+   const business_id = req.params.business_id;
+  getPendingCountBusiness("contacts_business", "Pending", business_id, res);
+});
+app.get("/pending-count-status-orders/:business_id", (req, res) => {
+   const business_id = req.params.business_id;
+  getPendingCountBusiness("orders", "Pending", business_id, res);
+});
+app.get("/pending-count-status-request-cancel/:business_id", (req, res) => {
+   const business_id = req.params.business_id;
+  getPendingCountBusiness("cancellation_request", "Pending", business_id, res);
+});
+const CountBusiness = async (table, business_id, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) FROM ${table} WHERE  business_id= $1`,
+      [ business_id]
+    );
+    const count = result.rows[0].count;
+    res.json({ count });
+  } catch (error) {
+    console.error(`Error executing query for table ${table}:`, error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+app.get("/count-tour-business/:business_id", (req, res) => {
+  const business_id = req.params.business_id;
+  CountBusiness("tours", business_id, res);
+});
+
+app.get("/count-booking-business/:business_id", (req, res) => {
+  const business_id = req.params.business_id;
+  CountBusiness("orders", business_id, res);
+});
+
+const CountNews = async (table, business_id, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*) FROM ${table} WHERE  posted_by_id_business = $1 AND posted_by_type='business'`,
+      [business_id]
+    );
+    const count = result.rows[0].count;
+    res.json({ count });
+  } catch (error) {
+    console.error(`Error executing query for table ${table}:`, error);
+    res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+app.get("/count-news-business/:business_id", (req, res) => {
+  const business_id = req.params.business_id;
+  CountNews("news", business_id, res);
+});
+
+app.get("/average-rating/:businessId", async (req, res) => {
+  const { businessId } = req.params;
+
+  try {
+    const averageRatingQuery = `
+      SELECT 
+        ROUND(AVG(r.rating), 2) AS average_rating
+      FROM tours t
+      JOIN ratings r ON t.tour_id = r.tour_id
+      WHERE t.business_id = $1
+    `;
+
+    const averageRatingResult = await pool.query(averageRatingQuery, [
+      businessId,
+    ]);
+
+    if (averageRatingResult.rows.length === 0) {
+      return res.status(404).json({
+        message: "Không tìm thấy đánh giá cho các tour của doanh nghiệp này.",
+      });
+    }
+
+    const averageRating = averageRatingResult.rows[0].average_rating;
+      if (averageRatingResult.rows[0].average_rating === null) {
+        return res.status(404).json({
+          message: "Chưa có đánh giá.",
+        });
+      }
+
+    res.status(200).json({ count: averageRating });
+  } catch (error) {
+    console.error("Lỗi khi tính điểm đánh giá trung bình:", error);
+    res.status(500).json({
+      message: "Lỗi khi tính điểm đánh giá trung bình. Vui lòng thử lại sau.",
+    });
+  }
+});
+
+
 
 
 
@@ -1072,7 +1171,7 @@ const updateOrders = async () => {
         UPDATE orders 
         SET status = 'Complete' 
         WHERE tour_id = ANY($1) 
-        AND status = 'Confirm'
+        AND status = 'Confirm' AND status_payment = 'Paid'
       `;
       await client.query(updateQuery, [tourIds]);
       console.log("Orders updated successfully");
@@ -1084,7 +1183,7 @@ const updateOrders = async () => {
   }
 };
 
-cron.schedule("0 0 * * *", () => {
+cron.schedule("0 * * * *", () => {
   console.log("Running cron job to update complete orders");
   updateOrders();
 });
@@ -1319,5 +1418,7 @@ cron.schedule("0 * * * *", () => {
   );
   updateOrderStatus();
 });
+// -----------------------------------------------
+
 // -----------------------------------------------
 module.exports = app;

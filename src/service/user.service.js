@@ -561,6 +561,8 @@ app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
         o.adult_quantity,
         o.child_quantity,
         o.infant_quantity,
+        t.start_date,
+        t.end_date,
         o.total_price,
         o.status_payment,
         o.booking_date_time,

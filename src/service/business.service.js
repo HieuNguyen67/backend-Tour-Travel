@@ -962,6 +962,87 @@ app.post(
   }
 );
 
+// -----------------------------------------------
+
+
+app.get("/total-revenue/:businessId", async (req, res) => {
+  const { businessId } = req.params;
+
+  try {
+    const totalRevenueQuery = `
+      SELECT 
+        SUM(total_price) AS total_revenue
+      FROM orders 
+      WHERE business_id = $1 
+      AND status_payment = 'Paid'
+    `;
+
+    const totalRevenueResult = await pool.query(totalRevenueQuery, [
+      businessId,
+    ]);
+
+    if (totalRevenueResult.rows.length === 0) {
+      return res.status(404).json({
+        message: "Không tìm thấy doanh thu cho doanh nghiệp này.",
+      });
+    }
+
+    const totalRevenue = parseFloat(
+      totalRevenueResult.rows[0].total_revenue
+    ).toFixed(2);
+
+    res.status(200).json({ total_revenue: totalRevenue });
+  } catch (error) {
+    console.error("Lỗi khi tính tổng doanh thu:", error);
+    res.status(500).json({
+      message: "Lỗi khi tính tổng doanh thu. Vui lòng thử lại sau.",
+    });
+  }
+});
+app.get("/revenue-by-month/:businessId/:year", async (req, res) => {
+  const { businessId, year } = req.params;
+
+  try {
+    const months = Array.from({ length: 12 }, (_, i) => i + 1);
+    const initialData = months.map((month) => ({ month, total_revenue: 0 }));
+
+    const revenueQuery = `
+      SELECT 
+        EXTRACT(MONTH FROM booking_date_time) AS month,
+        SUM(total_price) AS total_revenue
+      FROM orders
+      WHERE business_id = $1 
+      AND EXTRACT(YEAR FROM booking_date_time) = $2 
+      AND status_payment = 'Paid'
+      GROUP BY month
+      ORDER BY month
+    `;
+
+    const revenueResult = await pool.query(revenueQuery, [businessId, year]);
+
+    revenueResult.rows.forEach((row) => {
+      initialData[row.month - 1].total_revenue = parseFloat(row.total_revenue);
+    });
+
+    const allZero = initialData.every(
+      (monthData) => monthData.total_revenue === 0
+    );
+
+    if (allZero) {
+      res.status(200).json(null);
+    } else {
+      res.status(200).json(initialData);
+    }
+  } catch (error) {
+    console.error("Lỗi khi lấy thống kê doanh thu theo tháng:", error);
+    res.status(500).json({
+      message:
+        "Lỗi khi lấy thống kê doanh thu theo tháng. Vui lòng thử lại sau.",
+    });
+  }
+});
+
+
 
 // -----------------------------------------------
 module.exports = app;
