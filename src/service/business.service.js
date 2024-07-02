@@ -1042,6 +1042,44 @@ app.get("/revenue-by-month/:businessId/:year", async (req, res) => {
   }
 });
 
+app.get(
+  "/order-status-ratio/:businessId",
+  async (req, res) => {
+    const { businessId } = req.params;
+
+    try {
+      const orderStatusRatioQuery = `
+      SELECT status, COUNT(*) * 100.0 / SUM(COUNT(*)) OVER () AS percentage
+      FROM orders
+      WHERE business_id = $1
+      GROUP BY status
+    `;
+
+      const result = await pool.query(orderStatusRatioQuery, [businessId]);
+
+      const allStatuses = ["Pending", "Confirm", "Complete", "Cancel"];
+      const data = allStatuses.map((status) => {
+        const found = result.rows.find((row) => row.status === status);
+        return {
+          status,
+          percentage: found ? parseFloat(found.percentage).toFixed(2) : 0.0,
+        };
+      });
+
+      res.status(200).json(data);
+    } catch (error) {
+      console.error("Lỗi khi tính tỷ lệ trạng thái đơn hàng:", error);
+      res
+        .status(500)
+        .json({
+          message:
+            "Lỗi khi tính tỷ lệ trạng thái đơn hàng. Vui lòng thử lại sau.",
+        });
+    }
+  }
+);
+
+
 
 
 // -----------------------------------------------
