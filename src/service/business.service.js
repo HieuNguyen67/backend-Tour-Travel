@@ -12,35 +12,6 @@ const {transporter}= require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 
-const currentDateTime = moment()
-  .tz("Asia/Ho_Chi_Minh")
-  .format("YYYY-MM-DD HH:mm:ss");
-
-const formatDate = (
-  date,
-  timezone = "Asia/Ho_Chi_Minh",
-  format = "DD-MM-YYYY HH:mm:ss"
-) => {
-  return moment(date).tz(timezone).format(format);
-};
-
-const formatDate1 = (
-  date,
-  timezone = "Asia/Ho_Chi_Minh",
-  format = "DD-MM-YYYY"
-) => {
-  return moment(date).tz(timezone).format(format);
-};
-
-const formatPrice = (price) => {
-  if (typeof price !== "number") {
-    return price;
-  }
-  return new Intl.NumberFormat("vi-VN", {
-    style: "currency",
-    currency: "VND",
-  }).format(price);
-};
 
 app.use(bodyParser.json());
 
@@ -295,6 +266,7 @@ app.post(
       }
 
       const images = req.files;
+      
       for (let i = 0; i < images.length; i++) {
         const image = images[i].buffer;
         await pool.query(
@@ -304,9 +276,7 @@ app.post(
         );
       }
 
-      res
-        .status(201)
-        .json({ message: "Tour and images added successfully!", tour_id });
+      res.status(201).json({ message: "Tour and images added successfully!", tour_id });
     } catch (error) {
       console.error("Error adding tour: ", error.message);
       res.status(500).json({ error: "Server error" });

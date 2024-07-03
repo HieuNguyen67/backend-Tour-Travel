@@ -12,9 +12,7 @@ const {generateRandomCode}= require("../middlewares/randomcode.js");
 const {transporter}= require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-const currentDateTime = moment()
-  .tz("Asia/Ho_Chi_Minh")
-  .format("YYYY-MM-DD HH:mm:ss");
+const currentDateTime = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD HH:mm:ss");
 const formatDate = (
   date,
   timezone = "Asia/Ho_Chi_Minh",
@@ -171,7 +169,6 @@ app.put(
     const { status, note } = req.body;
 
     try {
-      await pool.query("BEGIN");
 
       const updateAccountStatusQuery = `
       UPDATE accounts 
@@ -196,13 +193,11 @@ app.put(
         objectType,
       ]);
 
-      await pool.query("COMMIT");
 
       res.status(200).json({
         message: "Cập nhật tài khoản thành công !",
       });
     } catch (error) {
-      await pool.query("ROLLBACK");
       console.error("Lỗi khi cập nhật tài khoản:", error);
       res.status(500).json({ error: "Internal server error" });
     }
@@ -378,8 +373,6 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
           accounts a ON ad.account_id = a.account_id
           LEFT JOIN 
           accounts ab ON b.account_id = ab.account_id
-         
-
       `;
     }
 
@@ -488,14 +481,10 @@ app.put(
         objectType,
       ]);
 
-      res
-        .status(200)
-        .json({ message: "News status and note updated successfully" });
+      res.status(200).json({ message: "News status and note updated successfully" });
     } catch (error) {
       console.error("Failed to update news status and note:", error);
-      res
-        .status(500)
-        .json({ message: "Failed to update news status and note" });
+      res.status(500).json({ message: "Failed to update news status and note" });
     }
   }
 );
@@ -630,6 +619,8 @@ app.get("/report-list", async (req, res) => {
       customers c ON tr.customer_id = c.customer_id
     LEFT JOIN 
       accounts a ON c.account_id = a.account_id
+      ORDER BY 
+                tr.reportdate DESC
       
     `);
 
@@ -880,9 +871,8 @@ app.get("/list-admin-actions", async (req, res) => {
         aa.admin_action_id,
         CASE
         WHEN aa.object_type = 'news' THEN n.title
-          WHEN aa.object_type = 'accounts' THEN ac.name
-          
-          ELSE NULL
+        WHEN aa.object_type = 'accounts' THEN ac.name         
+        ELSE NULL
         END AS object_name,
         aa.action,
         aa.action_time
@@ -931,7 +921,7 @@ app.get("/list-orders/:status", authenticateToken, async (req, res) => {
         o.status,
         o.status_rating,
         a.name AS customer_name
-        FROM orders o
+      FROM orders o
       JOIN tours t ON o.tour_id = t.tour_id
       JOIN customers c ON o.customer_id = c.customer_id
       JOIN accounts a ON c.account_id = a.account_id
@@ -951,10 +941,6 @@ app.get("/list-orders/:status", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
   }
 });
-
-
-
-
 
 
 cron.schedule("0 * * * *", async () => {
@@ -1162,7 +1148,7 @@ const updateOrders = async () => {
       FROM tours 
       WHERE end_date < $1
     `;
-    const toursResult = await client.query(toursQuery, [currentDate]);
+    const toursResult = await pool.query(toursQuery, [currentDate]);
 
     const tourIds = toursResult.rows.map((row) => row.tour_id);
 
@@ -1173,7 +1159,7 @@ const updateOrders = async () => {
         WHERE tour_id = ANY($1) 
         AND status = 'Confirm' AND status_payment = 'Paid'
       `;
-      await client.query(updateQuery, [tourIds]);
+      await pool.query(updateQuery, [tourIds]);
       console.log("Orders updated successfully");
     } else {
       console.log("No tours to update");
@@ -1252,20 +1238,21 @@ app.get("/refunds-detail/:refundId", authenticateToken, async (req, res) => {
         o.status_payment,
         c.bank_account_name,
         c.bank_account_number,
-        c.bank_name
+        c.bank_name,
+        a.email
+
       FROM refunds r
       JOIN cancellation_request cr ON r.request_id = cr.request_id
       JOIN orders o ON cr.order_id = o.order_id
       JOIN customers c ON o.customer_id = c.customer_id
+      JOIN accounts a ON c.account_id = a.account_id
       WHERE r.refund_id = $1
     `;
 
     const refundResult = await pool.query(refundQuery, [refundId]);
 
     if (refundResult.rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy thông tin hoàn tiền" });
+      return res.status(404).json({ message: "Không tìm thấy thông tin hoàn tiền" });
     }
 
     res.status(200).json(refundResult.rows[0]);

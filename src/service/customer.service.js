@@ -20,8 +20,6 @@ const formatDate = (
   return moment(date).tz(timezone).format(format);
 };
 
-
-
 const formatDate1 = (
   date,
   timezone = "Asia/Ho_Chi_Minh",
@@ -511,53 +509,69 @@ app.post(
     `;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
 
+      const orderDetails = await getOrderDetails(orderId);
+
+      await sendConfirmationEmail(orderDetails);
+
       res.status(201).json({
         message: "Quý khách đã đặt tour thành công!",
         order: orderResult.rows[0],
       });
+    } catch (error) {
+      console.error("Đặt tour không thành công:", error);
+      res.status(500).json({
+        message: "Đặt tour không thành công. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
 
-      const orderDetailQuery = `
-        SELECT 
-          o.order_id,
-          o.tour_id,
-          t.name AS tour_name,
-          t.start_date,
-          o.adult_quantity,
-          o.child_quantity,
-          o.infant_quantity,
-          o.total_price,
-          o.status_payment,
-          o.booking_date_time,
-          o.note,
-          o.customer_id,
-          c.account_id,
-          a.name AS customer_name,
-          a.phone_number,
-          a.email,
-          a.address,
-          o.business_id,
-          o.code_order,
-          o.status,
-          o.status_rating,
-          l.location_name
-        FROM orders o
-        JOIN tours t ON o.tour_id = t.tour_id
-        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
-        JOIN customers c ON o.customer_id = c.customer_id
-        JOIN accounts a ON c.account_id = a.account_id
-        WHERE o.order_id = $1
-      `;
-      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-        orderId,
-      ]);
+async function getOrderDetails(orderId) {
+  const orderDetailQuery = `
+    SELECT 
+      o.order_id,
+      o.tour_id,
+      t.name AS tour_name,
+      t.start_date,
+      o.adult_quantity,
+      o.child_quantity,
+      o.infant_quantity,
+      o.total_price,
+      o.status_payment,
+      o.booking_date_time,
+      o.note,
+      o.customer_id,
+      c.account_id,
+      a.name AS customer_name,
+      a.phone_number,
+      a.email,
+      a.address,
+      o.business_id,
+      o.code_order,
+      o.status,
+      o.status_rating,
+      l.location_name
+    FROM orders o
+    JOIN tours t ON o.tour_id = t.tour_id
+    LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+    LEFT JOIN locations l ON dl.location_departure_id = l.location_id
+    JOIN customers c ON o.customer_id = c.customer_id
+    JOIN accounts a ON c.account_id = a.account_id
+    WHERE o.order_id = $1
+  `;
+  const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
+    orderId,
+  ]);
+  return updatedOrderDetailResult.rows[0];
+}
 
-      const mailOptions = {
-        from: "Tour Travel <your-email@gmail.com>",
-        to: updatedOrderDetailResult.rows[0].email,
-        subject: "Yêu Cầu Thanh Toán",
-        html: `
-               <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
+async function sendConfirmationEmail(orderDetails) {
+  const mailOptions = {
+    from: "Tour Travel <your-email@gmail.com>",
+    to: orderDetails.email,
+    subject: "Yêu Cầu Thanh Toán",
+    html: `
+      <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
       <div style="background: #84ffff; border: 5px solid #00796b;">
           <p style="text-align: center; padding: 2rem; color: black;">
               Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
@@ -572,37 +586,27 @@ app.post(
           </span>
       </h4>
       <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-          <p>Mã booking: <strong>${
-            updatedOrderDetailResult.rows[0].code_order
-          }</strong></p>
-          <p>Tên Tour: <strong>${
-            updatedOrderDetailResult.rows[0].tour_name
-          }</strong></p>
+          <p>Mã booking: <strong>${orderDetails.code_order}</strong></p>
+          <p>Tên Tour: <strong>${orderDetails.tour_name}</strong></p>
           <p>Ngày đi: <strong>${formatDate1(
-            updatedOrderDetailResult.rows[0].start_date
+            orderDetails.start_date
           )}</strong></p>
-          <p>Điểm khởi hành: <strong>${
-            updatedOrderDetailResult.rows[0].location_name
-          }</strong></p>
+          <p>Điểm khởi hành: <strong>${orderDetails.location_name}</strong></p>
           <p>Số lượng Người lớn: <strong>${
-            updatedOrderDetailResult.rows[0].adult_quantity
+            orderDetails.adult_quantity
           }</strong>, Trẻ em: <strong>${
-          updatedOrderDetailResult.rows[0].child_quantity
-        }</strong>, Trẻ nhỏ: <strong>${
-          updatedOrderDetailResult.rows[0].infant_quantity
-        }</strong></p>
+      orderDetails.child_quantity
+    }</strong>, Trẻ nhỏ: <strong>${orderDetails.infant_quantity}</strong></p>
           <p>
               Tổng tiền:
               <span style="color: red; font-weight: bold; font-size: 1.3rem;">
-                  ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+                  ${formatPrice(orderDetails.total_price)}
               </span>
           </p>
           <p>Ngày booking: <strong>${formatDate(
-            updatedOrderDetailResult.rows[0].booking_date_time
+            orderDetails.booking_date_time
           )}</strong></p>
-          <p>Ghi chú: <strong>${
-            updatedOrderDetailResult.rows[0].note
-          }</strong></p>
+          <p>Ghi chú: <strong>${orderDetails.note}</strong></p>
           <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
           <p style="color: red; font-weight: bold;">
               Quý khách vui lòng thanh toán trong 24h kể từ thời gian booking. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
@@ -617,37 +621,22 @@ app.post(
       </div>
       <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
       <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-          <p>Khách hàng: <strong>${
-            updatedOrderDetailResult.rows[0].customer_name
-          }</strong></p>
-          <p>Email: <strong>${
-            updatedOrderDetailResult.rows[0].email
-          }</strong></p>
-          <p>SĐT: <strong>${
-            updatedOrderDetailResult.rows[0].phone_number
-          }</strong></p>
-          <p>Địa chỉ: <strong>${
-            updatedOrderDetailResult.rows[0].address
-          }</strong></p>
+          <p>Khách hàng: <strong>${orderDetails.customer_name}</strong></p>
+          <p>Email: <strong>${orderDetails.email}</strong></p>
+          <p>SĐT: <strong>${orderDetails.phone_number}</strong></p>
+          <p>Địa chỉ: <strong>${orderDetails.address}</strong></p>
       </div>
-            `,
-      };
+    `,
+  };
 
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.log("Gửi email không thành công:", error);
-        } else {
-          console.log("Email xác nhận đã được gửi: " + info.response);
-        }
-      });
-    } catch (error) {
-      console.error("Đặt tour không thành công:", error);
-      res.status(500).json({
-        message: "Đặt tour không thành công. Vui lòng thử lại sau.",
-      });
+  transporter.sendMail(mailOptions, function (error, info) {
+    if (error) {
+      console.log("Gửi email không thành công:", error);
+    } else {
+      console.log("Email xác nhận đã được gửi: " + info.response);
     }
-  }
-);
+  });
+}
 
 //-----------------------------------------------
 
@@ -656,8 +645,8 @@ const momoConfig = {
   accessKey: "F8BBA842ECF85",
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
-  notifyUrl:
-    "https://12c2-14-179-236-58.ngrok-free.app/v1/api/customer/momo/webhook",
+  ipnUrl:
+    "https://ee54-123-22-104-248.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -725,6 +714,10 @@ app.post(
       const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
 
+      const orderDetails = await getOrderDetails(order_Id);
+
+      await sendConfirmationEmail(orderDetails);
+
       const requestId = `${Date.now()}`;
       const orderId = code_order;
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
@@ -734,7 +727,7 @@ app.post(
 
       const returnUrl = `http://localhost:3000/checkout`;
 
-      const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
+      const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
       const signature = crypto
         .createHmac("sha256", momoConfig.secretKey)
         .update(rawSignature)
@@ -749,7 +742,7 @@ app.post(
         orderId: orderId,
         orderInfo: orderInfo,
         redirectUrl: returnUrl,
-        ipnUrl: momoConfig.notifyUrl,
+        ipnUrl: momoConfig.ipnUrl,
         lang: "vi",
         requestType: requestType,
         autoCapture: true,
@@ -779,131 +772,6 @@ app.post(
         order: order,
         payment_url: paymentResponse.data.payUrl,
       });
-
-      const orderDetailQuery = `
-        SELECT 
-          o.order_id,
-          o.tour_id,
-          t.name AS tour_name,
-          t.start_date,
-          o.adult_quantity,
-          o.child_quantity,
-          o.infant_quantity,
-          o.total_price,
-          o.status_payment,
-          o.booking_date_time,
-          o.note,
-          o.customer_id,
-          c.account_id,
-          a.name AS customer_name,
-          a.phone_number,
-          a.email,
-          a.address,
-          o.business_id,
-          o.code_order,
-          o.status,
-          o.status_rating,
-          l.location_name
-        FROM orders o
-        JOIN tours t ON o.tour_id = t.tour_id
-        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
-        JOIN customers c ON o.customer_id = c.customer_id
-        JOIN accounts a ON c.account_id = a.account_id
-        WHERE o.order_id = $1
-      `;
-      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-        order_Id,
-      ]);
-
-      const mailOptions = {
-        from: "Tour Travel <your-email@gmail.com>",
-        to: updatedOrderDetailResult.rows[0].email,
-        subject: "Yêu Cầu Thanh Toán",
-        html: `
-               <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
-      <div style="background: #84ffff; border: 5px solid #00796b;">
-          <p style="text-align: center; padding: 2rem; color: black;">
-              Cảm ơn quý khách đã sử dụng dịch vụ của chúng tôi
-              <br />
-              Booking của quý khách đã được chúng tôi xác nhận thành công!
-          </p>
-      </div>
-      <h4 style="font-size: 1.5rem;">
-          Phiếu xác nhận booking
-          <span style="border: 3px solid red; color: red;">
-              CHƯA THANH TOÁN
-          </span>
-      </h4>
-      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-          <p>Mã booking: <strong>${
-            updatedOrderDetailResult.rows[0].code_order
-          }</strong></p>
-          <p>Tên Tour: <strong>${
-            updatedOrderDetailResult.rows[0].tour_name
-          }</strong></p>
-          <p>Ngày đi: <strong>${formatDate1(
-            updatedOrderDetailResult.rows[0].start_date
-          )}</strong></p>
-          <p>Điểm khởi hành: <strong>${
-            updatedOrderDetailResult.rows[0].location_name
-          }</strong></p>
-          <p>Số lượng Người lớn: <strong>${
-            updatedOrderDetailResult.rows[0].adult_quantity
-          }</strong>, Trẻ em: <strong>${
-          updatedOrderDetailResult.rows[0].child_quantity
-        }</strong>, Trẻ nhỏ: <strong>${
-          updatedOrderDetailResult.rows[0].infant_quantity
-        }</strong></p>
-          <p>
-              Tổng tiền:
-              <span style="color: red; font-weight: bold; font-size: 1.3rem;">
-                  ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
-              </span>
-          </p>
-          <p>Ngày booking: <strong>${formatDate(
-            updatedOrderDetailResult.rows[0].booking_date_time
-          )}</strong></p>
-          <p>Ghi chú: <strong>${
-            updatedOrderDetailResult.rows[0].note
-          }</strong></p>
-          <p>Thời hạn thanh toán: <strong>24 tiếng</strong></p>
-          <p style="color: red; font-weight: bold;">
-              Quý khách vui lòng thanh toán trong 24h kể từ thời gian booking. Nếu quá thời hạn trên, quý khách chưa thanh toán, Tour Travel sẽ tự động huỷ booking này.
-          </p>
-      </div>
-      <h4 style="font-weight: bold; font-size: 1.6rem;">THANH TOÁN</h4>
-      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-          <p>Nếu quý khách chưa thanh toán. Để hoàn tất quá trình đặt tour, Quý khách vui lòng đăng nhập vào Trang Web Tour Travel và bấm vào chi tiết đơn đặt hàng trong phần thông tin cá nhân và chọn phương thức thanh toán.</p>
-          <p>Nếu quý khách đã thanh toán vui lòng bỏ qua email này.</p>
-          <p>Quý khách có thể kiểm tra thông tin chi tiết về đơn hàng của mình bằng cách đăng nhập vào tài khoản của mình trên trang web của chúng tôi.</p>
-          <p>Nếu Quý khách có bất kỳ câu hỏi nào, xin vui lòng liên hệ với chúng tôi qua email này.</p>
-      </div>
-      <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
-      <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
-          <p>Khách hàng: <strong>${
-            updatedOrderDetailResult.rows[0].customer_name
-          }</strong></p>
-          <p>Email: <strong>${
-            updatedOrderDetailResult.rows[0].email
-          }</strong></p>
-          <p>SĐT: <strong>${
-            updatedOrderDetailResult.rows[0].phone_number
-          }</strong></p>
-          <p>Địa chỉ: <strong>${
-            updatedOrderDetailResult.rows[0].address
-          }</strong></p>
-      </div>
-            `,
-      };
-
-      transporter.sendMail(mailOptions, function (error, info) {
-        if (error) {
-          console.log("Gửi email không thành công:", error);
-        } else {
-          console.log("Email xác nhận đã được gửi: " + info.response);
-        }
-      });
     } catch (error) {
       console.error("Đặt tour không thành công:", error);
       res.status(500).json({
@@ -926,12 +794,12 @@ app.post(
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
       const amount = total_price.toString();
       const extraData = "";
-  
+
       const requestType = paymentMethod;
 
       const returnUrl = `http://localhost:3000/checkout`;
 
-      const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.notifyUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
+      const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
       const signature = crypto
         .createHmac("sha256", momoConfig.secretKey)
         .update(rawSignature)
@@ -946,7 +814,7 @@ app.post(
         orderId: orderId,
         orderInfo: orderInfo,
         redirectUrl: returnUrl,
-        ipnUrl: momoConfig.notifyUrl,
+        ipnUrl: momoConfig.ipnUrl,
         lang: "vi",
         requestType: requestType,
         autoCapture: true,
@@ -1011,11 +879,12 @@ app.post("/momo/webhook", async (req, res) => {
     if (resultCode === 0) {
       const updateOrderQuery = `
         UPDATE orders
-        SET status_payment = 'Paid', status='Confirm'
+        SET status_payment = 'Paid'
         WHERE code_order = $1
       `;
 
       await pool.query(updateOrderQuery, [originalOrderId]);
+
 
       const method = partnerCode + " " + payType;
       const paymentQuery = `
@@ -1034,52 +903,25 @@ app.post("/momo/webhook", async (req, res) => {
         )
       `;
 
-      await pool.query(paymentQuery, [
-        originalOrderId,
-        currentDateTime,
-        amount,
-        method,
-      ]);
+     await pool.query(paymentQuery, [
+       originalOrderId,
+       currentDateTime,
+       amount,
+       method,
+     ]);
 
-      const orderDetailQuery = `
-        SELECT 
-          o.order_id,
-          o.tour_id,
-          t.name AS tour_name,
-          t.start_date,
-          o.adult_quantity,
-          o.child_quantity,
-          o.infant_quantity,
-          o.total_price,
-          o.status_payment,
-          o.booking_date_time,
-          o.note,
-          o.customer_id,
-          c.account_id,
-          a.name AS customer_name,
-          a.phone_number,
-          a.email,
-          a.address,
-          o.business_id,
-          o.code_order,
-          o.status,
-          o.status_rating,
-          l.location_name
-        FROM orders o
-        JOIN tours t ON o.tour_id = t.tour_id
-        LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-        LEFT JOIN locations l ON dl.location_departure_id = l.location_id
-        JOIN customers c ON o.customer_id = c.customer_id
-        JOIN accounts a ON c.account_id = a.account_id
-        WHERE o.code_order = $1
-      `;
-      const updatedOrderDetailResult = await pool.query(orderDetailQuery, [
-        originalOrderId,
+     const orderQuery = `SELECT order_id FROM orders WHERE code_order = $1`;
+      const orderResult = await pool.query(orderQuery, [
+        originalOrderId
       ]);
+              const order_Id = orderResult.rows[0].order_id;
+
+
+      const updatedOrderDetailResult = await getOrderDetails(order_Id);
 
       const mailOptions = {
         from: "Tour Travel <your-email@gmail.com>",
-        to: updatedOrderDetailResult.rows[0].email,
+        to: updatedOrderDetailResult.email,
         subject: "Thanh Toán Thành Công",
         html: `
              <h3 style="font-weight: bold; font-size: 1.6rem;">TOUR TRAVEL</h3>
@@ -1098,51 +940,43 @@ app.post("/momo/webhook", async (req, res) => {
     </h4>
     <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
         <p>Mã booking: <strong>${
-          updatedOrderDetailResult.rows[0].code_order
+          updatedOrderDetailResult.code_order
         }</strong></p>
         <p style="color: red;">Xin quý khách vui lòng nhớ số booking để thuận tiện cho giao dịch sau này.</p>
-        <p>Tên Tour: <strong>${
-          updatedOrderDetailResult.rows[0].tour_name
-        }</strong></p>
+        <p>Tên Tour: <strong>${updatedOrderDetailResult.tour_name}</strong></p>
         <p>Ngày đi: <strong>${formatDate(
-          updatedOrderDetailResult.rows[0].start_date
+          updatedOrderDetailResult.start_date
         )}</strong></p>
         <p>Điểm khởi hành: <strong>${
-          updatedOrderDetailResult.rows[0].location_name
+          updatedOrderDetailResult.location_name
         }</strong></p>
         <p>Số lượng Người lớn: <strong>${
-          updatedOrderDetailResult.rows[0].adult_quantity
+          updatedOrderDetailResult.adult_quantity
         }</strong>, Trẻ em: <strong>${
-          updatedOrderDetailResult.rows[0].child_quantity
+          updatedOrderDetailResult.child_quantity
         }</strong>, Trẻ nhỏ: <strong>${
-          updatedOrderDetailResult.rows[0].infant_quantity
+          updatedOrderDetailResult.infant_quantity
         }</strong></p>
         <p>
             Tổng tiền: 
             <span style="color: red; font-weight: bold; font-size: 1.3rem;">
-                ${formatPrice(updatedOrderDetailResult.rows[0].total_price)}
+                ${formatPrice(updatedOrderDetailResult.total_price)}
             </span>
         </p>
         <p>Ngày booking: <strong>${formatDate(
-          updatedOrderDetailResult.rows[0].booking_date_time
+          updatedOrderDetailResult.booking_date_time
         )}</strong></p>
-        <p>Ghi chú: <strong>${
-          updatedOrderDetailResult.rows[0].note
-        }</strong></p>
+        <p>Ghi chú: <strong>${updatedOrderDetailResult.note}</strong></p>
         
     </div>
     <h4 style="font-weight: bold; font-size: 1.6rem;">THÔNG TIN KHÁCH HÀNG</h4>
     <div style="background: #f5f5f5; border: 5px solid #212121; padding: 1rem;">
         <p>Khách hàng: <strong>${
-          updatedOrderDetailResult.rows[0].customer_name
+          updatedOrderDetailResult.customer_name
         }</strong></p>
-        <p>Email: <strong>${updatedOrderDetailResult.rows[0].email}</strong></p>
-        <p>SĐT: <strong>${
-          updatedOrderDetailResult.rows[0].phone_number
-        }</strong></p>
-        <p>Địa chỉ: <strong>${
-          updatedOrderDetailResult.rows[0].address
-        }</strong></p>
+        <p>Email: <strong>${updatedOrderDetailResult.email}</strong></p>
+        <p>SĐT: <strong>${updatedOrderDetailResult.phone_number}</strong></p>
+        <p>Địa chỉ: <strong>${updatedOrderDetailResult.address}</strong></p>
     </div>
           `,
       };
@@ -1293,28 +1127,28 @@ app.post(
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
     try {
-        const customerQuery = `
+      const customerQuery = `
         SELECT bank_account_name, bank_account_number, bank_name 
         FROM customers 
         WHERE customer_id = $1
       `;
-        const customerResult = await pool.query(customerQuery, [customerId]);
+      const customerResult = await pool.query(customerQuery, [customerId]);
 
-        if (customerResult.rows.length === 0) {
-          return res.status(404).json({ message: "Khách hàng không tồn tại" });
-        }
+      if (customerResult.rows.length === 0) {
+        return res.status(404).json({ message: "Khách hàng không tồn tại" });
+      }
 
-        const customer = customerResult.rows[0];
-        if (
-          !customer.bank_account_name ||
-          !customer.bank_account_number ||
-          !customer.bank_name
-        ) {
-          return res.status(400).json({
-            message:
-              "Khách hàng chưa điền đầy đủ thông tin tài khoản ngân hàng trong hồ sơ cá nhân.",
-          });
-        }
+      const customer = customerResult.rows[0];
+      if (
+        !customer.bank_account_name ||
+        !customer.bank_account_number ||
+        !customer.bank_name
+      ) {
+        return res.status(400).json({
+          message:
+            "Khách hàng chưa điền đầy đủ thông tin tài khoản ngân hàng trong hồ sơ cá nhân.",
+        });
+      }
 
       const cancellationRequestQuery = `
         INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
@@ -1324,15 +1158,15 @@ app.post(
 
       const cancellationRequestResult = await pool.query(
         cancellationRequestQuery,
-        [orderId,currentDateTime, reason, businessId, customerId]
+        [orderId, currentDateTime, reason, businessId, customerId]
       );
 
-        const updateOrderQuery = `
+      const updateOrderQuery = `
       UPDATE orders 
       SET status_request_cancel = 'Yes' 
       WHERE order_id = $1
     `;
-        await pool.query(updateOrderQuery, [orderId]);
+      await pool.query(updateOrderQuery, [orderId]);
 
       res.status(201).json({
         message: "Yêu cầu hủy đơn hàng đã được ghi nhận thành công!",
@@ -1340,12 +1174,9 @@ app.post(
       });
     } catch (error) {
       console.error("Lỗi khi ghi nhận yêu cầu hủy đơn hàng:", error);
-      res
-        .status(500)
-        .json({
-          message:
-            "Lỗi khi ghi nhận yêu cầu hủy đơn hàng. Vui lòng thử lại sau.",
-        });
+      res.status(500).json({
+        message: "Lỗi khi ghi nhận yêu cầu hủy đơn hàng. Vui lòng thử lại sau.",
+      });
     }
   }
 );
@@ -1387,8 +1218,6 @@ app.get("/list-cancellation-requests", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy danh sách yêu cầu hủy" });
   }
 });
-
-
 
 // -----------------------------------------------
 module.exports = app;
