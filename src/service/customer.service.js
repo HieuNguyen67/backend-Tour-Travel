@@ -245,6 +245,8 @@ app.get("/list-tours-filter", async (req, res) => {
       accounts a ON b.account_id = a.account_id
     WHERE
       t.status = 'Active' AND tc.name = $1 AND a.status = 'Active'
+      
+
   `;
 
   const params = [tourcategory_name];
@@ -297,6 +299,7 @@ app.get("/list-tours-filter", async (req, res) => {
   query += `
     GROUP BY
       t.tour_id, departure_location_name, dl.location_departure_id, tc.name
+    ORDER BY  t.created_at ASC
   `;
 
   try {
@@ -443,7 +446,13 @@ app.post(
   authenticateToken,
   async (req, res) => {
     const { tourId, customerId } = req.params;
-    const { adult_quantity, child_quantity, infant_quantity, note } = req.body;
+    const {
+      adult_quantity,
+      child_quantity,
+      infant_quantity,
+      note,
+      passengers,
+    } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
@@ -508,6 +517,21 @@ app.post(
       WHERE tour_id = $2
     `;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
+
+      const passengerInsertQuery = `
+      INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `;
+      for (const passenger of passengers) {
+        await pool.query(passengerInsertQuery, [
+          orderId,
+          passenger.name,
+          passenger.birthdate,
+          passenger.gender,
+          passenger.passport_number,
+          passenger.type,
+        ]);
+      }
 
       const orderDetails = await getOrderDetails(orderId);
 
@@ -646,7 +670,7 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   ipnUrl:
-    "https://ee54-123-22-104-248.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://7be9-123-22-104-248.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -660,6 +684,7 @@ app.post(
       infant_quantity,
       note,
       paymentMethod,
+      passengers,
     } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
@@ -713,6 +738,21 @@ app.post(
 
       const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
+
+      const passengerInsertQuery = `
+      INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
+      VALUES ($1, $2, $3, $4, $5, $6)
+    `;
+      for (const passenger of passengers) {
+        await pool.query(passengerInsertQuery, [
+          order_Id,
+          passenger.name,
+          passenger.birthdate,
+          passenger.gender,
+          passenger.passport_number,
+          passenger.type,
+        ]);
+      }
 
       const orderDetails = await getOrderDetails(order_Id);
 
@@ -885,7 +925,6 @@ app.post("/momo/webhook", async (req, res) => {
 
       await pool.query(updateOrderQuery, [originalOrderId]);
 
-
       const method = partnerCode + " " + payType;
       const paymentQuery = `
         INSERT INTO payments (
@@ -903,19 +942,16 @@ app.post("/momo/webhook", async (req, res) => {
         )
       `;
 
-     await pool.query(paymentQuery, [
-       originalOrderId,
-       currentDateTime,
-       amount,
-       method,
-     ]);
-
-     const orderQuery = `SELECT order_id FROM orders WHERE code_order = $1`;
-      const orderResult = await pool.query(orderQuery, [
-        originalOrderId
+      await pool.query(paymentQuery, [
+        originalOrderId,
+        currentDateTime,
+        amount,
+        method,
       ]);
-              const order_Id = orderResult.rows[0].order_id;
 
+      const orderQuery = `SELECT order_id FROM orders WHERE code_order = $1`;
+      const orderResult = await pool.query(orderQuery, [originalOrderId]);
+      const order_Id = orderResult.rows[0].order_id;
 
       const updatedOrderDetailResult = await getOrderDetails(order_Id);
 
@@ -1219,5 +1255,38 @@ app.get("/list-cancellation-requests", authenticateToken, async (req, res) => {
   }
 });
 
+app.get("/list-passengers/:orderId", authenticateToken, async (req, res) => {
+  const { orderId } = req.params;
+
+  try {
+    const passengersQuery = `
+      SELECT 
+        passenger_id,
+        order_id,
+        name,
+        birthdate,
+        gender,
+        passport_number,
+        type
+      FROM passengers
+      WHERE order_id = $1
+    `;
+
+    const passengersResult = await pool.query(passengersQuery, [orderId]);
+
+    if (passengersResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy hành khách cho đơn hàng này." });
+    }
+
+    res.status(200).json(passengersResult.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách hành khách:", error);
+    res.status(500).json({
+      message: "Lỗi khi lấy danh sách hành khách. Vui lòng thử lại sau.",
+    });
+  }
+});
 // -----------------------------------------------
 module.exports = app;
