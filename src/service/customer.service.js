@@ -1158,7 +1158,7 @@ app.post(
   authenticateToken,
   async (req, res) => {
     const { orderId, businessId, customerId } = req.params;
-    const { reason } = req.body;
+    const { reason, statusOrder } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
@@ -1186,17 +1186,44 @@ app.post(
         });
       }
 
-      const cancellationRequestQuery = `
+      if(statusOrder === "Confirm"){
+         const cancellationRequestQuery = `
         INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
         VALUES ($1, $2, $3, 'Pending', 'No', $4, $5)
         RETURNING *
       `;
+       var cancellationRequestResult = await pool.query(
+         cancellationRequestQuery,
+         [orderId, currentDateTime, reason, businessId, customerId]
+       );
 
-      const cancellationRequestResult = await pool.query(
-        cancellationRequestQuery,
-        [orderId, currentDateTime, reason, businessId, customerId]
-      );
+      }else{
+          const cancellationRequestQuery = `
+        INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
+        VALUES ($1, $2, 'Doanh nghiệp chưa xác nhận booking!', 'Confirm', 'No', $3, $4)
+        RETURNING *
+      `;
+       var cancellationRequestResult = await pool.query(
+         cancellationRequestQuery,
+         [orderId, currentDateTime, businessId, customerId]
+       );
+         const { request_id } = cancellationRequestResult.rows[0];
 
+         const OrdersQuery = "SELECT * FROM orders WHERE order_id =$1";
+         const OrdersResult = await pool.query(OrdersQuery, [orderId]);
+         const Total_price = OrdersResult.rows[0].total_price;
+      
+
+         const createRefundQuery = `
+        INSERT INTO refunds (request_id, refund_amount, status)
+        VALUES ($1, $2, 'Pending')
+        RETURNING *
+      `;
+         await pool.query(createRefundQuery, [request_id, Total_price]);
+      }
+
+      
+     
       const updateOrderQuery = `
       UPDATE orders 
       SET status_request_cancel = 'Yes' 
@@ -1231,10 +1258,10 @@ app.get("/list-cancellation-requests", authenticateToken, async (req, res) => {
     const queryParams = [];
 
     if (customerId) {
-      query += " WHERE cr.customer_id = $1";
+      query += " WHERE cr.customer_id = $1 ORDER BY cr.request_date DESC";
       queryParams.push(customerId);
     } else if (businessId) {
-      query += " WHERE cr.business_id = $1";
+      query += " WHERE cr.business_id = $1 ORDER BY cr.request_date DESC";
       queryParams.push(businessId);
     } else {
       return res
@@ -1288,5 +1315,7 @@ app.get("/list-passengers/:orderId", authenticateToken, async (req, res) => {
     });
   }
 });
+
+
 // -----------------------------------------------
 module.exports = app;

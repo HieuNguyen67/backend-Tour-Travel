@@ -7,12 +7,14 @@ const bcrypt = require("bcryptjs");
 const cron = require("node-cron");
 const moment = require("moment-timezone");
 const bodyParser = require("body-parser");
-const {authenticateToken} = require("../middlewares/authen.js");
-const {generateRandomCode}= require("../middlewares/randomcode.js");
-const {transporter}= require("../middlewares/nodemail.js");
+const { authenticateToken } = require("../middlewares/authen.js");
+const { generateRandomCode } = require("../middlewares/randomcode.js");
+const { transporter } = require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
-const currentDateTime = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD HH:mm:ss");
+const currentDateTime = moment()
+  .tz("Asia/Ho_Chi_Minh")
+  .format("YYYY-MM-DD HH:mm:ss");
 const formatDate = (
   date,
   timezone = "Asia/Ho_Chi_Minh",
@@ -46,9 +48,7 @@ pool.connect((err) => {
   }
 });
 
-
 //-----------------------------------------------
-
 
 app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
   const {
@@ -169,7 +169,6 @@ app.put(
     const { status, note } = req.body;
 
     try {
-
       const updateAccountStatusQuery = `
       UPDATE accounts 
       SET status = $1 , note = $2
@@ -192,7 +191,6 @@ app.put(
         actionTime,
         objectType,
       ]);
-
 
       res.status(200).json({
         message: "Cập nhật tài khoản thành công !",
@@ -271,9 +269,9 @@ app.post(
     const accountId = req.params.account_id;
     const adminId = req.params.adminId;
     const { title, content, newscategory_id } = req.body;
-const currentDateTime = moment()
-  .tz("Asia/Ho_Chi_Minh")
-  .format("YYYY-MM-DD HH:mm:ss");
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
     try {
       let query = "";
       if (req.query.role === "3") {
@@ -288,7 +286,13 @@ const currentDateTime = moment()
           RETURNING news_id`;
       }
 
-      const newsInsertValues = [title, content, newscategory_id, accountId,currentDateTime];
+      const newsInsertValues = [
+        title,
+        content,
+        newscategory_id,
+        accountId,
+        currentDateTime,
+      ];
       const newsInsertResult = await pool.query(query, newsInsertValues);
       const newsId = newsInsertResult.rows[0].news_id;
 
@@ -481,10 +485,14 @@ app.put(
         objectType,
       ]);
 
-      res.status(200).json({ message: "News status and note updated successfully" });
+      res
+        .status(200)
+        .json({ message: "News status and note updated successfully" });
     } catch (error) {
       console.error("Failed to update news status and note:", error);
-      res.status(500).json({ message: "Failed to update news status and note" });
+      res
+        .status(500)
+        .json({ message: "Failed to update news status and note" });
     }
   }
 );
@@ -746,8 +754,7 @@ app.get("/pending-count-status-news", (req, res) => {
 app.get("/pending-count-status-refunds", (req, res) => {
   getPendingCount("refunds", "Pending", res);
 });
-const getPendingCountBusiness = async (table, status,business_id, res) => {
-
+const getPendingCountBusiness = async (table, status, business_id, res) => {
   try {
     const result = await pool.query(
       `SELECT COUNT(*) FROM ${table} WHERE status = $1 AND business_id= $2`,
@@ -761,27 +768,27 @@ const getPendingCountBusiness = async (table, status,business_id, res) => {
   }
 };
 app.get("/pending-count-status-tour/:business_id", (req, res) => {
-          const business_id = req.params.business_id;
+  const business_id = req.params.business_id;
 
   getPendingCountBusiness("tours", "Inactive", business_id, res);
 });
 app.get("/pending-count-status-contact-business/:business_id", (req, res) => {
-   const business_id = req.params.business_id;
+  const business_id = req.params.business_id;
   getPendingCountBusiness("contacts_business", "Pending", business_id, res);
 });
 app.get("/pending-count-status-orders/:business_id", (req, res) => {
-   const business_id = req.params.business_id;
+  const business_id = req.params.business_id;
   getPendingCountBusiness("orders", "Pending", business_id, res);
 });
 app.get("/pending-count-status-request-cancel/:business_id", (req, res) => {
-   const business_id = req.params.business_id;
+  const business_id = req.params.business_id;
   getPendingCountBusiness("cancellation_request", "Pending", business_id, res);
 });
 const CountBusiness = async (table, business_id, res) => {
   try {
     const result = await pool.query(
       `SELECT COUNT(*) FROM ${table} WHERE  business_id= $1`,
-      [ business_id]
+      [business_id]
     );
     const count = result.rows[0].count;
     res.json({ count });
@@ -843,11 +850,11 @@ app.get("/average-rating/:businessId", async (req, res) => {
     }
 
     const averageRating = averageRatingResult.rows[0].average_rating;
-      if (averageRatingResult.rows[0].average_rating === null) {
-        return res.status(404).json({
-          message: "Chưa có đánh giá.",
-        });
-      }
+    if (averageRatingResult.rows[0].average_rating === null) {
+      return res.status(404).json({
+        message: "Chưa có đánh giá.",
+      });
+    }
 
     res.status(200).json({ count: averageRating });
   } catch (error) {
@@ -857,10 +864,6 @@ app.get("/average-rating/:businessId", async (req, res) => {
     });
   }
 });
-
-
-
-
 
 app.get("/list-admin-actions", async (req, res) => {
   try {
@@ -898,7 +901,6 @@ app.get("/list-admin-actions", async (req, res) => {
     res.status(500).json({ message: "Failed to retrieve admin actions" });
   }
 });
-
 
 app.get("/list-orders/:status", authenticateToken, async (req, res) => {
   const { status } = req.params;
@@ -941,7 +943,6 @@ app.get("/list-orders/:status", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng" });
   }
 });
-
 
 cron.schedule("0 * * * *", async () => {
   const currentDateTime = moment()
@@ -1138,7 +1139,6 @@ app.put(
 
 // -----------------------------------------------
 
-
 const updateOrders = async () => {
   try {
     const currentDate = new Date();
@@ -1193,6 +1193,7 @@ app.get("/list-refunds", authenticateToken, async (req, res) => {
       FROM refunds r
       JOIN cancellation_request cr ON r.request_id = cr.request_id
       LEFT JOIN orders o ON cr.order_id = o.order_id
+      ORDER BY r.refund_date DESC 
     `;
     const refundsResult = await pool.query(refundsQuery);
 
@@ -1252,17 +1253,17 @@ app.get("/refunds-detail/:refundId", authenticateToken, async (req, res) => {
     const refundResult = await pool.query(refundQuery, [refundId]);
 
     if (refundResult.rows.length === 0) {
-      return res.status(404).json({ message: "Không tìm thấy thông tin hoàn tiền" });
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy thông tin hoàn tiền" });
     }
 
     res.status(200).json(refundResult.rows[0]);
   } catch (error) {
     console.error("Lỗi khi lấy thông tin hoàn tiền:", error);
-    res
-      .status(500)
-      .json({
-        message: "Lỗi khi lấy thông tin hoàn tiền. Vui lòng thử lại sau.",
-      });
+    res.status(500).json({
+      message: "Lỗi khi lấy thông tin hoàn tiền. Vui lòng thử lại sau.",
+    });
   }
 });
 
@@ -1274,57 +1275,53 @@ app.put(
   async (req, res) => {
     const { refundId } = req.params;
     const { status } = req.body;
- const currentDateTime = moment()
-   .tz("Asia/Ho_Chi_Minh")
-   .format("YYYY-MM-DD HH:mm:ss");
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
     try {
-
       const query = `
       UPDATE refunds 
       SET status = $1, refund_date=$2
       WHERE refund_id = $3
     `;
-      await pool.query(query, [status, currentDateTime,refundId]);
-        if (status === 'Refunded') {
-
-          const getRequestIdQuery = `
+      await pool.query(query, [status, currentDateTime, refundId]);
+      if (status === "Refunded") {
+        const getRequestIdQuery = `
         SELECT request_id, refund_amount FROM refunds WHERE refund_id = $1
       `;
-          const requestIdResult = await pool.query(getRequestIdQuery, [
-            refundId,
-          ]);
-          const { request_id, refund_amount } = requestIdResult.rows[0];
+        const requestIdResult = await pool.query(getRequestIdQuery, [refundId]);
+        const { request_id, refund_amount } = requestIdResult.rows[0];
 
-            const updateStatusRefundQuery = `
+        const updateStatusRefundQuery = `
         UPDATE cancellation_request
         SET status_refund = 'Yes'
         WHERE request_id  = $1
       `;
-            await pool.query(updateStatusRefundQuery, [request_id]);
+        await pool.query(updateStatusRefundQuery, [request_id]);
 
-          const getOrderIdQuery = `
+        const getOrderIdQuery = `
         SELECT order_id FROM cancellation_request WHERE request_id = $1
       `;
-          const orderIdResult = await pool.query(getOrderIdQuery, [request_id]);
-          const { order_id } = orderIdResult.rows[0];
+        const orderIdResult = await pool.query(getOrderIdQuery, [request_id]);
+        const { order_id } = orderIdResult.rows[0];
 
-          const getTotalPriceQuery = `
+        const getTotalPriceQuery = `
         SELECT total_price FROM orders WHERE order_id = $1
       `;
-          const totalPriceResult = await pool.query(getTotalPriceQuery, [
-            order_id,
-          ]);
-          const { total_price } = totalPriceResult.rows[0];
+        const totalPriceResult = await pool.query(getTotalPriceQuery, [
+          order_id,
+        ]);
+        const { total_price } = totalPriceResult.rows[0];
 
-          const newTotalPrice = total_price - refund_amount;
+        const newTotalPrice = total_price - refund_amount;
 
-          const updateTotalPriceQuery = `
+        const updateTotalPriceQuery = `
         UPDATE orders
         SET total_price = $1, status= 'Cancel'
         WHERE order_id = $2
       `;
-          await pool.query(updateTotalPriceQuery, [newTotalPrice, order_id]);
-        }
+        await pool.query(updateTotalPriceQuery, [newTotalPrice, order_id]);
+      }
 
       res.status(200).json({ message: "Cập nhật trạng thái thành công!" });
     } catch (error) {
@@ -1343,7 +1340,7 @@ const updateOrderStatus = async () => {
       .format("YYYY-MM-DD HH:mm:ss");
     const past24Hours = moment()
       .tz("Asia/Ho_Chi_Minh")
-      .subtract(24, "hours")
+      .subtract(48, "hours")
       .format("YYYY-MM-DD HH:mm:ss");
 
     const pendingOrdersQuery = `

@@ -937,6 +937,13 @@ app.post(
 
 app.get("/total-revenue/:businessId", async (req, res) => {
   const { businessId } = req.params;
+  const { startDate, endDate } = req.query;
+
+  if (!startDate || !endDate) {
+    return res.status(400).json({
+      message: "Vui lòng cung cấp cả ngày bắt đầu và ngày kết thúc.",
+    });
+  }
 
   try {
     const totalRevenueQuery = `
@@ -945,17 +952,16 @@ app.get("/total-revenue/:businessId", async (req, res) => {
       FROM orders 
       WHERE business_id = $1 
       AND status_payment = 'Paid'
+      AND booking_date_time BETWEEN $2 AND $3
     `;
 
     const totalRevenueResult = await pool.query(totalRevenueQuery, [
       businessId,
+      startDate,
+      endDate,
     ]);
 
-    if (totalRevenueResult.rows.length === 0) {
-      return res.status(404).json({
-        message: "Không tìm thấy doanh thu cho doanh nghiệp này.",
-      });
-    }
+    
 
     const totalRevenue = parseFloat(
       totalRevenueResult.rows[0].total_revenue
@@ -969,6 +975,7 @@ app.get("/total-revenue/:businessId", async (req, res) => {
     });
   }
 });
+
 app.get("/revenue-by-month/:businessId/:year", async (req, res) => {
   const { businessId, year } = req.params;
 
