@@ -450,20 +450,19 @@ app.get("/get-tour/:tourId", async (req, res) => {
     const tourId = req.params.tourId;
 
     const tourQuery = await pool.query(
-      `SELECT t.*, a.name as account_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
+      `SELECT t.*, a.name as account_name,tc.name as category_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
       FROM tours t
-         LEFT JOIN
-      business b ON t.business_id = b.business_id
+         LEFT JOIN business b ON t.business_id = b.business_id
+         LEFT JOIN tourcategories tc ON t.tourcategory_id  = tc.tourcategory_id 
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
       LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-       LEFT JOIN
-      locations ldep ON dl.location_departure_id = ldep.location_id
+       LEFT JOIN locations ldep ON dl.location_departure_id = ldep.location_id
       LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
       LEFT JOIN
       locations ldes ON dst.location_destination_id = ldes.location_id
       WHERE t.tour_id = $1
-      GROUP BY t.tour_id, a.name, departure_location_name, dl.location_departure_id`,
+      GROUP BY t.tour_id, a.name,category_name, departure_location_name, dl.location_departure_id`,
       [tourId]
     );
 
@@ -578,9 +577,11 @@ app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
         o.code_order,
         o.status,
         o.status_rating,
-        o.status_request_cancel
+        o.status_request_cancel,
+        tc.name as category_name
       FROM orders o
       JOIN tours t ON o.tour_id = t.tour_id
+      JOIN tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
       JOIN customers c ON o.customer_id = c.customer_id
       JOIN accounts a ON c.account_id = a.account_id
       WHERE o.order_id = $1

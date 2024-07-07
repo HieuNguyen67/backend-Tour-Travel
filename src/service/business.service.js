@@ -524,7 +524,7 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
 //-----------------------------------------------
 
 app.post("/add-policy-cancellation/:businessId", async (req, res) => {
-  const { days_before_departure, refund_percentage } = req.body;
+  const { days_before_departure, refund_percentage, type } = req.body;
   const { businessId } = req.params;
 
   if (days_before_departure == null || refund_percentage == null) {
@@ -535,8 +535,8 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
 
   try {
     const result = await pool.query(
-      "INSERT INTO policy_cancellation (days_before_departure, refund_percentage, business_id) VALUES ($1, $2, $3) RETURNING *",
-      [days_before_departure, refund_percentage, businessId]
+      "INSERT INTO policy_cancellation (days_before_departure, refund_percentage, business_id, type) VALUES ($1, $2, $3, $4) RETURNING *",
+      [days_before_departure, refund_percentage, businessId, type]
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
@@ -566,11 +566,12 @@ app.get("/list-policies/:business_id", async (req, res) => {
 
 app.get("/list-policies-cancellation/:business_id", async (req, res) => {
   const { business_id } = req.params;
+  const {type}= req.query;
 
   try {
-    let query = `SELECT * FROM policy_cancellation WHERE business_id = $1`;
+    let query = `SELECT * FROM policy_cancellation WHERE business_id = $1 AND type= $2 ORDER BY days_before_departure ASC`;
 
-    const result = await pool.query(query, [business_id]);
+    const result = await pool.query(query, [business_id, type]);
 
     res.json(result.rows);
   } catch (error) {
@@ -822,6 +823,9 @@ app.post(
   async (req, res) => {
     const { requestId } = req.params;
     const { status } = req.body;
+     const currentDateTime = moment()
+       .tz("Asia/Ho_Chi_Minh")
+       .format("YYYY-MM-DD HH:mm:ss");
 
     try {
       const cancellationRequestQuery = `
@@ -852,7 +856,7 @@ app.post(
       const order = orderResult.rows[0];
 
       const tourQuery = `
-        SELECT * FROM tours WHERE tour_id = $1
+        SELECT t.*, tc.name as category_name FROM tours t LEFT JOIN tourcategories tc ON t.tourcategory_id  = tc.tourcategory_id   WHERE tour_id = $1
       `;
       const tourResult = await pool.query(tourQuery, [order.tour_id]);
 
@@ -863,15 +867,23 @@ app.post(
       const tour = tourResult.rows[0];
 
       if (status === "Confirm") {
+        
         const startDate = new Date(tour.start_date);
         const requestDate = new Date(cancellationRequest.request_date);
         const diffTime = Math.abs(startDate - requestDate);
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-        const policyQuery = `
-          SELECT * FROM policy_cancellation WHERE business_id = $1 AND days_before_departure >= $2
+        if (tour.category_name === "Du lịch trong nước") {
+          var policyQuery = `
+          SELECT * FROM policy_cancellation WHERE business_id = $1 AND days_before_departure >= $2 AND type= 'Trong nước'
           ORDER BY days_before_departure ASC LIMIT 1
         `;
+        }else{
+           var policyQuery = `
+          SELECT * FROM policy_cancellation WHERE business_id = $1 AND days_before_departure >= $2 AND type= 'Nước ngoài'
+          ORDER BY days_before_departure ASC LIMIT 1
+        `;
+        }
+        
         const policyResult = await pool.query(policyQuery, [
           cancellationRequest.business_id,
           diffDays,
@@ -896,13 +908,14 @@ app.post(
         await pool.query(updateCancellationRequestQuery, [requestId]);
 
         const refundQuery = `
-          INSERT INTO refunds (request_id, refund_amount, status)
-          VALUES ($1, $2, 'Pending')
+          INSERT INTO refunds (request_id, refund_amount, status, request_refund_date )
+          VALUES ($1, $2, 'Pending', $3)
           RETURNING *
         `;
         const refundResult = await pool.query(refundQuery, [
           requestId,
           refundAmount,
+          currentDateTime,
         ]);
 
         res.status(201).json({
@@ -1055,6 +1068,50 @@ app.get(
     }
   }
 );
+
+app.get("/list-passengers-tour/:tourId", authenticateToken, async (req, res) => {
+  const { tourId } = req.params;
+
+  try {
+    const passengersQuery = `
+      SELECT 
+        p.passenger_id,
+        p.order_id,
+        p.name,
+        p.birthdate,
+        p.gender,
+        p.passport_number,
+        p.type,
+        o.tour_id,
+        o.code_order,
+        o.status_payment,
+        o.status,
+        t.name as tour_name
+      FROM passengers p
+      JOIN orders o ON p.order_id = o.order_id
+      LEFT JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.tour_id = $1 AND o.status_payment = 'Paid' AND  o.status != 'Cancel' AND  o.status != 'Pending'
+    `;
+
+    const passengersResult = await pool.query(passengersQuery, [tourId]);
+
+    if (passengersResult.rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy hành khách cho tour này." });
+    }
+    const tour_name = passengersResult.rows[0].tour_name
+
+    res.status(200).json(passengersResult.rows );
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách hành khách:", error);
+    res
+      .status(500)
+      .json({
+        message: "Lỗi khi lấy danh sách hành khách. Vui lòng thử lại sau.",
+      });
+  }
+});
 
 
 

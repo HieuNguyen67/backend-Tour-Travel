@@ -1182,6 +1182,7 @@ app.get("/list-refunds", authenticateToken, async (req, res) => {
         r.request_id,
         r.refund_amount,
         r.refund_date,
+        r.request_refund_date,
         r.status,
         r.note,
         cr.order_id,
@@ -1193,7 +1194,7 @@ app.get("/list-refunds", authenticateToken, async (req, res) => {
       FROM refunds r
       JOIN cancellation_request cr ON r.request_id = cr.request_id
       LEFT JOIN orders o ON cr.order_id = o.order_id
-      ORDER BY r.refund_date DESC 
+      ORDER BY r.request_refund_date DESC 
     `;
     const refundsResult = await pool.query(refundsQuery);
 
@@ -1385,11 +1386,15 @@ const updateOrderStatus = async () => {
       const { request_id } = cancellationRequestResult.rows[0];
 
       const createRefundQuery = `
-        INSERT INTO refunds (request_id, refund_amount, status, note)
-        VALUES ($1, $2, 'Pending', 'Doanh nghiệp không hoạt động!')
+        INSERT INTO refunds (request_id, refund_amount, status, note,request_refund_date )
+        VALUES ($1, $2, 'Pending', 'Doanh nghiệp không hoạt động!', $3)
         RETURNING *
       `;
-      await pool.query(createRefundQuery, [request_id, total_price]);
+      await pool.query(createRefundQuery, [
+        request_id,
+        total_price,
+        currentDateTime,
+      ]);
     }
   } catch (error) {
     console.error("Failed to update order status and create refunds:", error);

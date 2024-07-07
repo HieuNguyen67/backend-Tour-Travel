@@ -1215,15 +1215,17 @@ app.post(
       
 
          const createRefundQuery = `
-        INSERT INTO refunds (request_id, refund_amount, status)
-        VALUES ($1, $2, 'Pending')
+        INSERT INTO refunds (request_id, refund_amount, status, request_refund_date)
+        VALUES ($1, $2, 'Pending', $3)
         RETURNING *
       `;
-         await pool.query(createRefundQuery, [request_id, Total_price]);
+         await pool.query(createRefundQuery, [
+           request_id,
+           Total_price,
+           currentDateTime,
+         ]);
       }
 
-      
-     
       const updateOrderQuery = `
       UPDATE orders 
       SET status_request_cancel = 'Yes' 
