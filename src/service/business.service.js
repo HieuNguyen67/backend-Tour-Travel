@@ -11,6 +11,7 @@ const { generateRandomCode } = require("../middlewares/randomcode.js");
 const {transporter}= require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+const ExcelJS = require("exceljs");
 
 
 app.use(bodyParser.json());
@@ -220,6 +221,7 @@ app.post(
         tourcategory_id,
         location_departure_id,
         destination_locations,
+        tour_code
       } = req.body;
 
       if (!req.files || req.files.length === 0) {
@@ -229,8 +231,8 @@ app.post(
       }
 
       const newTour = await pool.query(
-        `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, business_id, created_at)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, $13)
+        `INSERT INTO tours (name, description, adult_price, child_price, infant_price, start_date, end_date, quantity, status, vehicle, hotel, tourcategory_id, business_id, created_at, tour_code)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, $13, $14)
             RETURNING tour_id`,
         [
           name,
@@ -245,7 +247,8 @@ app.post(
           hotel,
           tourcategory_id,
           business_id,
-          currentDateTime
+          currentDateTime,
+          tour_code
         ]
       );
 
@@ -307,6 +310,7 @@ app.get("/list-tours/:business_id", async (req, res) => {
       t.tour_id,
       t.name AS tour_name,
       t.description,
+      t.tour_code,
       t.adult_price,
       t.child_price,
       t.infant_price,
@@ -373,6 +377,7 @@ app.put(
         tourcategory_id,
         location_departure_id,
         destination_locations,
+        tour_code
       } = req.body;
       const currentDateTime = moment()
         .tz("Asia/Ho_Chi_Minh")
@@ -401,8 +406,9 @@ app.put(
             hotel = $10,
             tourcategory_id = $11,
             created_at = $12,
-            status= 'Active'
-        WHERE tour_id = $13`,
+            status= 'Active',
+            tour_code = $13
+        WHERE tour_id = $14`,
         [
           name,
           description,
@@ -416,6 +422,7 @@ app.put(
           hotel,
           tourcategory_id,
           currentDateTime,
+          tour_code,
           tour_id,
         ]
       );
@@ -1068,7 +1075,6 @@ app.get(
     }
   }
 );
-
 app.get("/list-passengers-tour/:tourId", authenticateToken, async (req, res) => {
   const { tourId } = req.params;
 
@@ -1086,12 +1092,18 @@ app.get("/list-passengers-tour/:tourId", authenticateToken, async (req, res) => 
         o.code_order,
         o.status_payment,
         o.status,
-        t.name as tour_name
+        t.name as tour_name,
+        a.email,
+        a.phone_number,
+        a.address,
+        o.note
       FROM passengers p
       JOIN orders o ON p.order_id = o.order_id
+      LEFT JOIN customers c ON o.customer_id = c.customer_id
+      LEFT JOIN accounts a ON c.account_id = a.account_id
       LEFT JOIN tours t ON o.tour_id = t.tour_id
-      WHERE o.tour_id = $1 AND o.status_payment = 'Paid' AND  o.status != 'Cancel' AND  o.status != 'Pending'
-    `;
+      WHERE o.tour_id = $1 AND o.status_payment = 'Paid' AND  o.status != 'Cancel' AND  o.status != 'Pending'`
+    ;
 
     const passengersResult = await pool.query(passengersQuery, [tourId]);
 
@@ -1112,6 +1124,103 @@ app.get("/list-passengers-tour/:tourId", authenticateToken, async (req, res) => 
       });
   }
 });
+
+app.get(
+  "/export-list-passengers-tour/:tourId",
+  authenticateToken,
+  async (req, res) => {
+    const { tourId } = req.params;
+
+    try {
+      const passengersQuery = `
+      SELECT 
+        p.passenger_id,
+        p.order_id,
+        p.name,
+        p.birthdate,
+        p.gender,
+        p.passport_number,
+        p.type,
+        o.tour_id,
+        o.code_order,
+        o.status_payment,
+        o.status,
+        t.name as tour_name,
+        a.email,
+        a.phone_number,
+        a.address,
+        o.note
+      FROM passengers p
+      JOIN orders o ON p.order_id = o.order_id
+      LEFT JOIN customers c ON o.customer_id = c.customer_id
+      LEFT JOIN accounts a ON c.account_id = a.account_id
+      LEFT JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.tour_id = $1 AND o.status_payment = 'Paid' AND  o.status != 'Cancel' AND  o.status != 'Pending'
+    `;
+
+      const passengersResult = await pool.query(passengersQuery, [tourId]);
+
+      if (passengersResult.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "Không tìm thấy hành khách cho tour này." });
+      }
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Passengers");
+      worksheet.getRow(1).height = 30;
+
+      
+
+      worksheet.columns = [
+        { header: "Mã Booking", key: "code_order", width: 20 },
+        { header: "Họ và Tên", key: "name", width: 25 },
+        { header: "Ngày sinh", key: "birthdate", width: 15 },
+        { header: "Giới tính", key: "gender", width: 10 },
+        { header: "Số CCCD/Passport", key: "passport_number", width: 20 },
+        { header: "Email", key: "email", width: 25 },
+        { header: "SĐT", key: "phone_number", width: 15 },
+        { header: "Địa Chỉ", key: "address", width: 25 },
+        { header: "Loại KH", key: "type", width: 10 },
+        { header: "Ghi chú", key: "note", width: 35 },
+      ];
+      
+      passengersResult.rows.forEach((row, index) => {
+        const addedRow = worksheet.addRow(row);
+        addedRow.height = 20; 
+      });
+
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+          row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+            cell.border = {
+              top: { style: "medium" },
+              left: { style: "medium" },
+              bottom: { style: "medium" },
+              right: { style: "medium" },
+            };
+          });
+        });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Disposition",
+        "attachment; filename=passengers.xlsx"
+      );
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+
+      res.send(buffer);
+      
+    } catch (error) {
+      console.error("Lỗi khi lấy danh sách hành khách:", error);
+      res.status(500).json({
+        message: "Lỗi khi lấy danh sách hành khách. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
 
 
 

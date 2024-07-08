@@ -410,6 +410,7 @@ app.get("/list-news-travel/:category", async (req, res) => {
         (n.posted_by_type = 'business' AND b.account_id = a.account_id)
       )
       WHERE n.status = 'Confirm' AND nc.name = $1
+      ORDER BY n.created_at DESC
     `;
     const result = await pool.query(query, [category]);
 
@@ -510,8 +511,8 @@ app.get("/get-all-tour-images/:tourId", async (req, res) => {
 
 //-----------------------------------------------
 
-app.get("/get-ratings-tour/:tour_id", async (req, res) => {
-  const { tour_id } = req.params;
+app.get("/get-ratings-tour/:tour_code", async (req, res) => {
+  const { tour_code } = req.params;
 
   try {
     const result = await pool.query(
@@ -522,18 +523,22 @@ app.get("/get-ratings-tour/:tour_id", async (req, res) => {
       customers c ON r.customer_id = c.customer_id
       LEFT JOIN 
       accounts a ON c.account_id = a.account_id
-      WHERE r.tour_id = $1
+      LEFT JOIN 
+      tours t ON r.tour_id = t.tour_id
+      WHERE t.tour_code = $1
     `,
-      [tour_id]
+      [tour_code]
     );
 
     const averageRating = await pool.query(
       `
-      SELECT AVG(rating) as avg_rating, COUNT(*) as total_ratings
-      FROM ratings
-      WHERE tour_id = $1
+      SELECT AVG(r.rating) as avg_rating, COUNT(r.*) as total_ratings
+      FROM ratings r
+      LEFT JOIN 
+      tours t ON r.tour_id = t.tour_id
+      WHERE t.tour_code = $1
     `,
-      [tour_id]
+      [tour_code]
     );
 
     res.json({

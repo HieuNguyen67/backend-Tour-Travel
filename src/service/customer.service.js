@@ -299,7 +299,7 @@ app.get("/list-tours-filter", async (req, res) => {
   query += `
     GROUP BY
       t.tour_id, departure_location_name, dl.location_departure_id, tc.name
-    ORDER BY  t.created_at ASC
+    ORDER BY  t.start_date ASC
   `;
 
   try {
