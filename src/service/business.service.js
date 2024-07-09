@@ -1131,6 +1131,14 @@ app.get(
   async (req, res) => {
     const { tourId } = req.params;
 
+    const formatDate = (
+      date,
+      timezone = "Asia/Ho_Chi_Minh",
+      format = "DD/MM/YYYY"
+    ) => {
+      return moment(date).tz(timezone).format(format);
+    };
+
     try {
       const passengersQuery = `
       SELECT 
@@ -1146,6 +1154,8 @@ app.get(
         o.status_payment,
         o.status,
         t.name as tour_name,
+        t.start_date,
+        t.end_date,
         a.email,
         a.phone_number,
         a.address,
@@ -1165,40 +1175,72 @@ app.get(
           .status(404)
           .json({ message: "Không tìm thấy hành khách cho tour này." });
       }
+
+      const tourName = passengersResult.rows[0].tour_name;
+       const startDate = formatDate(passengersResult.rows[0].start_date);
+        const endDate = formatDate(passengersResult.rows[0].end_date);
+
       const workbook = new ExcelJS.Workbook();
       const worksheet = workbook.addWorksheet("Passengers");
       worksheet.getRow(1).height = 30;
 
+     
+        worksheet.mergeCells("A1:J1");
+        const listRow = worksheet.getCell("A1");
+        listRow.value = `DANH SÁCH HÀNH KHÁCH ĐI TOUR (${startDate} - ${endDate}) `;
+        listRow.font = { size: 16, bold: true };
+        listRow.alignment = { vertical: "middle", horizontal: "center" };
+        worksheet.getRow(1).height = 30;
       
+      worksheet.mergeCells("A2:J2");
+      const titleRow = worksheet.getCell("A2");
+      titleRow.value = `${tourName}`;
+      titleRow.font = { size: 16, bold: true };
+      titleRow.alignment = { vertical: "middle", horizontal: "center" };
+      worksheet.getRow(1).height = 30;
+      worksheet.addRow();
+
+      worksheet.addRow([
+        "Mã Booking",
+        "Họ và Tên",
+        "Ngày sinh",
+        "Giới tính",
+        "Số CCCD/Passport",
+        "Email",
+        "SĐT",
+        "Địa Chỉ",
+        "Loại KH",
+        "Ghi chú",
+      ]);
 
       worksheet.columns = [
-        { header: "Mã Booking", key: "code_order", width: 20 },
-        { header: "Họ và Tên", key: "name", width: 25 },
-        { header: "Ngày sinh", key: "birthdate", width: 15 },
-        { header: "Giới tính", key: "gender", width: 10 },
-        { header: "Số CCCD/Passport", key: "passport_number", width: 20 },
-        { header: "Email", key: "email", width: 25 },
-        { header: "SĐT", key: "phone_number", width: 15 },
-        { header: "Địa Chỉ", key: "address", width: 25 },
-        { header: "Loại KH", key: "type", width: 10 },
-        { header: "Ghi chú", key: "note", width: 35 },
+        { key: "code_order", width: 20 },
+        { key: "name", width: 25 },
+        { key: "birthdate", width: 15 },
+        { key: "gender", width: 10 },
+        { key: "passport_number", width: 20 },
+        { key: "email", width: 25 },
+        { key: "phone_number", width: 15 },
+        { key: "address", width: 25 },
+        { key: "type", width: 10 },
+        { key: "note", width: 35 },
       ];
-      
-      passengersResult.rows.forEach((row, index) => {
+
+      passengersResult.rows.forEach((row) => {
         const addedRow = worksheet.addRow(row);
-        addedRow.height = 20; 
+        addedRow.height = 20;
       });
 
-        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-          row.eachCell({ includeEmpty: false }, (cell, colNumber) => {
-            cell.border = {
-              top: { style: "medium" },
-              left: { style: "medium" },
-              bottom: { style: "medium" },
-              right: { style: "medium" },
-            };
-          });
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          cell.border = {
+            top: { style: "medium" },
+            left: { style: "medium" },
+            bottom: { style: "medium" },
+            right: { style: "medium" },
+          };
         });
+      });
 
       const buffer = await workbook.xlsx.writeBuffer();
 
@@ -1212,7 +1254,6 @@ app.get(
       );
 
       res.send(buffer);
-      
     } catch (error) {
       console.error("Lỗi khi lấy danh sách hành khách:", error);
       res.status(500).json({
@@ -1222,8 +1263,196 @@ app.get(
   }
 );
 
+app.get("/list-orders-by-tour/:tourId", async (req, res) => {
+  const { tourId } = req.params;
+
+  try {
+    const ordersQuery = `
+      SELECT 
+        o.order_id,
+        o.tour_id,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        t.name as tour_name,
+        o.status
+      FROM orders o
+      LEFT JOIN tours t ON o.tour_id = t.tour_id
+
+      WHERE o.tour_id = $1 
+        AND o.status_payment = 'Paid' 
+       AND  o.status != 'Cancel' AND  o.status != 'Pending'
+    `;
+
+    const ordersResult = await pool.query(ordersQuery, [tourId]);
+
+    if (ordersResult.rows.length === 0) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng nào." });
+    }
+
+    res.status(200).json(ordersResult.rows);
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách đơn hàng:", error);
+    res.status(500).json({ message: "Lỗi khi lấy danh sách đơn hàng." });
+  }
+});
+
+app.get(
+  "/export-list-orders-tour/:tourId",
+  authenticateToken,
+  async (req, res) => {
+    const { tourId } = req.params;
+
+       const formatDate = (
+         date,
+         timezone = "Asia/Ho_Chi_Minh",
+         format = "DD/MM/YYYY"
+       ) => {
+         return moment(date).tz(timezone).format(format);
+       };
+
+    try {
+      const passengersQuery = `
+       SELECT 
+        o.order_id,
+        o.tour_id,
+        o.adult_quantity,
+        o.child_quantity,
+        o.infant_quantity,
+        o.total_price,
+        o.status_payment,
+        o.booking_date_time,
+        o.note,
+        o.customer_id,
+        o.business_id,
+        o.code_order,
+        t.name as tour_name,
+        t.start_date,
+        t.end_date,
+        o.status,
+        a.name,
+        a.email,
+        a.phone_number
+      FROM orders o
+      LEFT JOIN tours t ON o.tour_id = t.tour_id
+      LEFT JOIN customers c ON o.customer_id = c.customer_id
+      LEFT JOIN accounts a ON c.account_id = a.account_id
+      WHERE o.tour_id = $1 
+        AND o.status_payment = 'Paid' 
+       AND  o.status != 'Cancel' AND  o.status != 'Pending'
+    `;
+
+      const passengersResult = await pool.query(passengersQuery, [tourId]);
+
+      if (passengersResult.rows.length === 0) {
+        return res
+          .status(404)
+          .json({ message: "Không tìm thấy đơn booking cho tour này." });
+      }
+
+      const tourName = passengersResult.rows[0].tour_name;
+   const startDate = formatDate(passengersResult.rows[0].start_date);
+   const endDate = formatDate(passengersResult.rows[0].end_date);
+
+      const workbook = new ExcelJS.Workbook();
+      const worksheet = workbook.addWorksheet("Passengers");
+      worksheet.getRow(1).height = 30;
+
+       worksheet.mergeCells("A1:K1");
+       const listRow = worksheet.getCell("A1");
+       listRow.value = `DANH SÁCH BOOKING TOUR (${startDate} - ${endDate}) `;
+       listRow.font = { size: 16, bold: true };
+       listRow.alignment = { vertical: "middle", horizontal: "center" };
+       worksheet.getRow(1).height = 30;
+
+       worksheet.mergeCells("A2:K2");
+       const titleRow = worksheet.getCell("A2");
+       titleRow.value = `${tourName}`;
+       titleRow.font = { size: 16, bold: true };
+       titleRow.alignment = { vertical: "middle", horizontal: "center" };
+       worksheet.getRow(1).height = 30;
+       worksheet.addRow();
 
 
+      worksheet.addRow([
+        "Mã Booking",
+        "SL Người lớn",
+        "SL Trẻ em",
+        "SL Trẻ nhỏ",
+        "Tổng giá",
+        "Thanh toán",
+        "Ngày đặt",
+        "Ghi chú",
+        "Họ tên",
+        "Email",
+        "SĐT",
+      ]);
+
+      worksheet.columns = [
+        { key: "code_order", width: 20 },
+        { key: "adult_quantity", width: 20 },
+        { key: "child_quantity", width: 20 },
+        { key: "infant_quantity", width: 20 },
+        { key: "total_price", width: 20 },
+        { key: "status_payment", width: 20 },
+        { key: "booking_date_time", width: 20 },
+        { key: "note", width: 20 },
+        { key: "name", width: 25 },
+        { key: "email", width: 25 },
+        { key: "phone_number", width: 15 },
+       
+      ];
+
+        passengersResult.rows.forEach((row) => {
+          const rowData = {
+            ...row,
+            status_payment:
+              row.status_payment === "Paid"
+                ? "Đã thanh toán"
+                : row.status_payment,
+          };
+          const addedRow = worksheet.addRow(rowData);
+          addedRow.height = 20;
+        });
+
+      worksheet.eachRow({ includeEmpty: false }, (row) => {
+        row.eachCell({ includeEmpty: false }, (cell) => {
+          cell.border = {
+            top: { style: "medium" },
+            left: { style: "medium" },
+            bottom: { style: "medium" },
+            right: { style: "medium" },
+          };
+        });
+      });
+
+      const buffer = await workbook.xlsx.writeBuffer();
+
+      res.setHeader(
+        "Content-Disposition",
+        "attachment; filename=passengers.xlsx"
+      );
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+
+      res.send(buffer);
+    } catch (error) {
+      console.error("Lỗi khi lấy danh sách hành khách:", error);
+      res.status(500).json({
+        message: "Lỗi khi lấy danh sách hành khách. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
 
 // -----------------------------------------------
 module.exports = app;
