@@ -491,8 +491,9 @@ app.post(
         code_order, 
         status, 
         status_rating,
-        status_request_cancel
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No') RETURNING *
+        status_request_cancel, 
+        status_payment_business
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid') RETURNING *
     `;
 
       const code_order = generateRandomCode(10);
@@ -715,8 +716,8 @@ app.post(
       INSERT INTO orders (
         tour_id, adult_quantity, child_quantity, infant_quantity, total_price,
         status_payment, booking_date_time, note, customer_id, business_id, 
-        code_order, status, status_rating, status_request_cancel
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No')
+        code_order, status, status_rating, status_request_cancel, status_payment_business
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid')
       RETURNING *
     `;
 
