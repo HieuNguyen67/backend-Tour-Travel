@@ -1,5 +1,6 @@
 const express = require("express");
 // -----------------------------------------------
+const multer = require("multer");
 const app = express.Router();
 const pool = require("../../connectDB.js");
 const bcrypt = require("bcryptjs");
@@ -12,6 +13,9 @@ const bodyParser = require("body-parser");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { generateRandomCode } = require("../middlewares/randomcode.js");
 const { transporter } = require("../middlewares/nodemail.js");
+const ExcelJS = require("exceljs");
+const upload = multer({ storage: multer.memoryStorage() });
+
 const formatDate = (
   date,
   timezone = "Asia/Ho_Chi_Minh",
@@ -443,7 +447,7 @@ app.post("/daily-checkin/:customerId", async (req, res) => {
 
 app.post(
   "/book-tour/:tourId/:customerId",
-  authenticateToken,
+  upload.single("file"),
   async (req, res) => {
     const { tourId, customerId } = req.params;
     const {
@@ -451,13 +455,17 @@ app.post(
       child_quantity,
       infant_quantity,
       note,
-      passengers,
+      passengers: passengersFromBody,
     } = req.body;
+    console.log(adult_quantity);
+        console.log(child_quantity);
+
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
+
     try {
-      const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
+      const tourQuery = "SELECT * FROM tours WHERE tour_id = $1";
       const tourResult = await pool.query(tourQuery, [tourId]);
 
       if (tourResult.rows.length === 0) {
@@ -465,8 +473,8 @@ app.post(
       }
 
       const tour = tourResult.rows[0];
-      const total_quantity = adult_quantity + child_quantity + infant_quantity;
-
+const total_quantity = parseInt(adult_quantity) + parseInt(child_quantity) + parseInt(infant_quantity);
+      console.log(total_quantity);
       if (tour.quantity < total_quantity) {
         return res.status(400).json({ message: "Số lượng không đủ" });
       }
@@ -476,6 +484,40 @@ app.post(
         tour.child_price * child_quantity +
         tour.infant_price * infant_quantity;
 
+      let passengers = [];
+
+      if (req.file) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(req.file.buffer);
+        const worksheet = workbook.getWorksheet("Passengers");
+
+        passengers = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 2) {
+            const birthdate = moment(row.getCell(2).value, "DD/MM/YYYY").format(
+              "YYYY-MM-DD"
+            );
+
+            const passenger = {
+              name: row.getCell(1).value,
+              birthdate: birthdate,
+              gender: row.getCell(3).value,
+              passport_number: row.getCell(4).value,
+              type: row.getCell(5).value,
+            };
+            passengers.push(passenger);
+          }
+        });
+        if (passengers.length !== total_quantity) {
+    console.error('Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:', passengers.length, total_quantity);
+    return res.status(400).json({ message: 'Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour' });
+  }
+         var passengersParse = passengers;
+      } else {
+        passengers = passengersFromBody;
+         var passengersParse = JSON.parse(passengers);
+
+      }
       const orderQuery = `
       INSERT INTO orders (
         tour_id, 
@@ -512,18 +554,11 @@ app.post(
       ]);
       const orderId = orderResult.rows[0].order_id;
 
-      const updateTourQuery = `
-      UPDATE tours 
-      SET quantity = quantity - $1 
-      WHERE tour_id = $2
-    `;
-      await pool.query(updateTourQuery, [total_quantity, tourId]);
-
       const passengerInsertQuery = `
       INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
       VALUES ($1, $2, $3, $4, $5, $6)
     `;
-      for (const passenger of passengers) {
+      for (const passenger of passengersParse) {
         await pool.query(passengerInsertQuery, [
           orderId,
           passenger.name,
@@ -534,8 +569,14 @@ app.post(
         ]);
       }
 
-      const orderDetails = await getOrderDetails(orderId);
+       const updateTourQuery = `
+      UPDATE tours 
+      SET quantity = quantity - $1 
+      WHERE tour_id = $2
+    `;
+       await pool.query(updateTourQuery, [total_quantity, tourId]);
 
+      const orderDetails = await getOrderDetails(orderId);
       await sendConfirmationEmail(orderDetails);
 
       res.status(201).json({
@@ -671,7 +712,7 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   ipnUrl:
-    "https://7be9-123-22-104-248.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://7926-115-78-0-156.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -1187,44 +1228,42 @@ app.post(
         });
       }
 
-      if(statusOrder === "Confirm"){
-         const cancellationRequestQuery = `
+      if (statusOrder === "Confirm") {
+        const cancellationRequestQuery = `
         INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
         VALUES ($1, $2, $3, 'Pending', 'No', $4, $5)
         RETURNING *
       `;
-       var cancellationRequestResult = await pool.query(
-         cancellationRequestQuery,
-         [orderId, currentDateTime, reason, businessId, customerId]
-       );
-
-      }else{
-          const cancellationRequestQuery = `
+        var cancellationRequestResult = await pool.query(
+          cancellationRequestQuery,
+          [orderId, currentDateTime, reason, businessId, customerId]
+        );
+      } else {
+        const cancellationRequestQuery = `
         INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
         VALUES ($1, $2, 'Doanh nghiệp chưa xác nhận booking!', 'Confirm', 'No', $3, $4)
         RETURNING *
       `;
-       var cancellationRequestResult = await pool.query(
-         cancellationRequestQuery,
-         [orderId, currentDateTime, businessId, customerId]
-       );
-         const { request_id } = cancellationRequestResult.rows[0];
+        var cancellationRequestResult = await pool.query(
+          cancellationRequestQuery,
+          [orderId, currentDateTime, businessId, customerId]
+        );
+        const { request_id } = cancellationRequestResult.rows[0];
 
-         const OrdersQuery = "SELECT * FROM orders WHERE order_id =$1";
-         const OrdersResult = await pool.query(OrdersQuery, [orderId]);
-         const Total_price = OrdersResult.rows[0].total_price;
-      
+        const OrdersQuery = "SELECT * FROM orders WHERE order_id =$1";
+        const OrdersResult = await pool.query(OrdersQuery, [orderId]);
+        const Total_price = OrdersResult.rows[0].total_price;
 
-         const createRefundQuery = `
+        const createRefundQuery = `
         INSERT INTO refunds (request_id, refund_amount, status, request_refund_date)
         VALUES ($1, $2, 'Pending', $3)
         RETURNING *
       `;
-         await pool.query(createRefundQuery, [
-           request_id,
-           Total_price,
-           currentDateTime,
-         ]);
+        await pool.query(createRefundQuery, [
+          request_id,
+          Total_price,
+          currentDateTime,
+        ]);
       }
 
       const updateOrderQuery = `
@@ -1319,6 +1358,60 @@ app.get("/list-passengers/:orderId", authenticateToken, async (req, res) => {
   }
 });
 
+app.get("/download-excel-template", async (req, res) => {
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet("Passengers");
+
+  worksheet.mergeCells("A1:E1");
+  const titleRow = worksheet.getCell("A1");
+  titleRow.value = `NHẬP DANH SÁCH HÀNH KHÁCH ĐI TOUR`;
+  titleRow.font = { size: 16, bold: true };
+  titleRow.alignment = { vertical: "middle", horizontal: "center" };
+  worksheet.getRow(1).height = 30;
+
+  worksheet.addRow([
+    "Họ và Tên",
+    "Ngày sinh (dd/mm/yyyy)",
+    "Giới tính (Nam, Nữ)",
+    "Số CCCD/Passport",
+    "Loại KH (Người lớn, Trẻ em, Trẻ nhỏ)",
+  ]);
+
+  worksheet.columns = [
+    { key: "name", width: 30 },
+    { key: "birthdate", width: 20 },
+    { key: "gender", width: 20 },
+    { key: "passport_number", width: 20 },
+    { key: "type", width: 35 },
+  ];
+
+  worksheet.getColumn("birthdate").numFmt = "dd/mm/yyyy";
+
+  const numRows = 100;
+
+  for (let i = 1; i <= numRows; i++) {
+    ["A", "B", "C", "D", "E"].forEach((col) => {
+      worksheet.getCell(`${col}${i}`).border = {
+        top: { style: "medium" },
+        left: { style: "medium" },
+        bottom: { style: "medium" },
+        right: { style: "medium" },
+      };
+    });
+  }
+
+  res.setHeader(
+    "Content-Disposition",
+    'attachment; filename="passenger_template.xlsx"'
+  );
+  res.setHeader(
+    "Content-Type",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+
+  await workbook.xlsx.write(res);
+  res.end();
+});
 
 // -----------------------------------------------
 module.exports = app;
