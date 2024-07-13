@@ -195,15 +195,7 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 
 app.get("/list-tours-filter", async (req, res) => {
   const {
-    location_departure_id,
-    location_destination_id,
-    tourcategory_name,
-    name,
-    min_adult_price,
-    max_adult_price,
-    hotel,
-    vehicle,
-    start_date,
+    tourcategory_name
   } = req.query;
   if (!tourcategory_name) {
     return res.status(400).json({ error: "tourcategory_name is required" });
@@ -249,57 +241,9 @@ app.get("/list-tours-filter", async (req, res) => {
       accounts a ON b.account_id = a.account_id
     WHERE
       t.status = 'Active' AND tc.name = $1 AND a.status = 'Active'
-      
-
   `;
 
   const params = [tourcategory_name];
-
-  if (location_departure_id) {
-    query += ` AND dl.location_departure_id = $${params.length + 1}`;
-    params.push(location_departure_id);
-  }
-
-  if (location_destination_id) {
-    query += ` AND dsl.location_destination_id = $${params.length + 1}`;
-    params.push(location_destination_id);
-  }
-
-  if (name) {
-    query += ` AND unaccent(LOWER(t.name)) LIKE unaccent(LOWER($${
-      params.length + 1
-    }))`;
-    params.push(`%${name}%`);
-  }
-
-  if (min_adult_price && max_adult_price) {
-    query += ` AND t.adult_price BETWEEN $${params.length + 1} AND $${
-      params.length + 2
-    }`;
-    params.push(min_adult_price);
-    params.push(max_adult_price);
-  } else if (min_adult_price) {
-    query += ` AND t.adult_price >= $${params.length + 1}`;
-    params.push(min_adult_price);
-  } else if (max_adult_price) {
-    query += ` AND t.adult_price <= $${params.length + 1}`;
-    params.push(max_adult_price);
-  }
-
-  if (hotel) {
-    query += ` AND t.hotel = $${params.length + 1}`;
-    params.push(hotel);
-  }
-  if (vehicle) {
-    query += ` AND t.vehicle = $${params.length + 1}`;
-    params.push(vehicle);
-  }
-
-  if (start_date) {
-    query += ` AND t.start_date >= $${params.length + 1}`;
-    params.push(start_date);
-  }
-
   query += `
     GROUP BY
       t.tour_id, departure_location_name, dl.location_departure_id, tc.name
@@ -447,6 +391,7 @@ app.post("/daily-checkin/:customerId", async (req, res) => {
 
 app.post(
   "/book-tour/:tourId/:customerId",
+  authenticateToken,
   upload.single("file"),
   async (req, res) => {
     const { tourId, customerId } = req.params;
@@ -457,8 +402,6 @@ app.post(
       note,
       passengers: passengersFromBody,
     } = req.body;
-    console.log(adult_quantity);
-        console.log(child_quantity);
 
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
@@ -473,8 +416,10 @@ app.post(
       }
 
       const tour = tourResult.rows[0];
-const total_quantity = parseInt(adult_quantity) + parseInt(child_quantity) + parseInt(infant_quantity);
-      console.log(total_quantity);
+      const total_quantity =
+        parseInt(adult_quantity) +
+        parseInt(child_quantity) +
+        parseInt(infant_quantity);
       if (tour.quantity < total_quantity) {
         return res.status(400).json({ message: "Số lượng không đủ" });
       }
@@ -509,14 +454,20 @@ const total_quantity = parseInt(adult_quantity) + parseInt(child_quantity) + par
           }
         });
         if (passengers.length !== total_quantity) {
-    console.error('Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:', passengers.length, total_quantity);
-    return res.status(400).json({ message: 'Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour' });
-  }
-         var passengersParse = passengers;
+          console.error(
+            "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:",
+            passengers.length,
+            total_quantity
+          );
+          return res.status(400).json({
+            message:
+              "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour",
+          });
+        }
+        var passengersParse = passengers;
       } else {
         passengers = passengersFromBody;
-         var passengersParse = JSON.parse(passengers);
-
+        var passengersParse = JSON.parse(passengers);
       }
       const orderQuery = `
       INSERT INTO orders (
@@ -569,12 +520,12 @@ const total_quantity = parseInt(adult_quantity) + parseInt(child_quantity) + par
         ]);
       }
 
-       const updateTourQuery = `
+      const updateTourQuery = `
       UPDATE tours 
       SET quantity = quantity - $1 
       WHERE tour_id = $2
     `;
-       await pool.query(updateTourQuery, [total_quantity, tourId]);
+      await pool.query(updateTourQuery, [total_quantity, tourId]);
 
       const orderDetails = await getOrderDetails(orderId);
       await sendConfirmationEmail(orderDetails);
@@ -712,12 +663,13 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   ipnUrl:
-    "https://7926-115-78-0-156.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://6ab2-113-163-103-30.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
   "/book-tour-momopay/:tourId/:customerId",
   authenticateToken,
+  upload.single("file"),
   async (req, res) => {
     const { tourId, customerId } = req.params;
     const {
@@ -726,7 +678,7 @@ app.post(
       infant_quantity,
       note,
       paymentMethod,
-      passengers,
+      passengers: passengersFromBody,
     } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
@@ -741,8 +693,10 @@ app.post(
       }
 
       const tour = tourResult.rows[0];
-      const total_quantity = adult_quantity + child_quantity + infant_quantity;
-
+      const total_quantity =
+        parseInt(adult_quantity) +
+        parseInt(child_quantity) +
+        parseInt(infant_quantity);
       if (tour.quantity < total_quantity) {
         return res.status(400).json({ message: "Số lượng không đủ" });
       }
@@ -751,6 +705,47 @@ app.post(
         tour.adult_price * adult_quantity +
         tour.child_price * child_quantity +
         tour.infant_price * infant_quantity;
+      let passengers = [];
+
+      if (req.file) {
+        const workbook = new ExcelJS.Workbook();
+        await workbook.xlsx.load(req.file.buffer);
+        const worksheet = workbook.getWorksheet("Passengers");
+
+        passengers = [];
+        worksheet.eachRow((row, rowNumber) => {
+          if (rowNumber > 2) {
+            const birthdate = moment(row.getCell(2).value, "DD/MM/YYYY").format(
+              "YYYY-MM-DD"
+            );
+
+            const passenger = {
+              name: row.getCell(1).value,
+              birthdate: birthdate,
+              gender: row.getCell(3).value,
+              passport_number: row.getCell(4).value,
+              type: row.getCell(5).value,
+            };
+            passengers.push(passenger);
+          }
+        });
+        if (passengers.length !== total_quantity) {
+          console.error(
+            "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:",
+            passengers.length,
+            total_quantity
+          );
+          return res.status(400).json({
+            message:
+              "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour",
+          });
+        }
+        var passengersParse = passengers;
+      } else {
+        passengers = passengersFromBody;
+        var passengersParse = JSON.parse(passengers);
+      }
+
       const code_order = generateRandomCode(10);
 
       const orderQuery = `
@@ -778,14 +773,11 @@ app.post(
       const order = orderResult.rows[0];
       const order_Id = orderResult.rows[0].order_id;
 
-      const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
-      await pool.query(updateTourQuery, [total_quantity, tourId]);
-
       const passengerInsertQuery = `
       INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
       VALUES ($1, $2, $3, $4, $5, $6)
     `;
-      for (const passenger of passengers) {
+      for (const passenger of passengersParse) {
         await pool.query(passengerInsertQuery, [
           order_Id,
           passenger.name,
@@ -795,6 +787,9 @@ app.post(
           passenger.type,
         ]);
       }
+
+      const updateTourQuery = `UPDATE tours SET quantity = quantity - $1 WHERE tour_id = $2`;
+      await pool.query(updateTourQuery, [total_quantity, tourId]);
 
       const orderDetails = await getOrderDetails(order_Id);
 
