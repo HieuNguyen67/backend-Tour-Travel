@@ -563,6 +563,7 @@ app.get("/order-detail/:orderId", authenticateToken, async (req, res) => {
         o.order_id,
         o.tour_id,
         t.name AS tour_name,
+        t.tour_code,
         o.adult_quantity,
         o.child_quantity,
         o.infant_quantity,

@@ -1236,7 +1236,7 @@ app.post(
       } else {
         const cancellationRequestQuery = `
         INSERT INTO cancellation_request (order_id, request_date, reason, status, status_refund, business_id, customer_id)
-        VALUES ($1, $2, 'Doanh nghiệp chưa xác nhận booking!', 'Confirm', 'No', $3, $4)
+        VALUES ($1, $2, 'Khác', 'Confirm', 'No', $3, $4)
         RETURNING *
       `;
         var cancellationRequestResult = await pool.query(
@@ -1368,7 +1368,7 @@ app.get("/download-excel-template", async (req, res) => {
     "Họ và Tên",
     "Ngày sinh (dd/mm/yyyy)",
     "Giới tính (Nam, Nữ)",
-    "Số CCCD/Passport",
+    "Số CCCD/Passport (Nếu có)",
     "Loại KH (Người lớn, Trẻ em, Trẻ nhỏ)",
   ]);
 
@@ -1376,7 +1376,7 @@ app.get("/download-excel-template", async (req, res) => {
     { key: "name", width: 30 },
     { key: "birthdate", width: 20 },
     { key: "gender", width: 20 },
-    { key: "passport_number", width: 20 },
+    { key: "passport_number", width: 25 },
     { key: "type", width: 35 },
   ];
 

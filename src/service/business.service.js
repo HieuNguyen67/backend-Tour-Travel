@@ -302,10 +302,10 @@ app.get("/tourcategories", async (req, res) => {
 
 //-----------------------------------------------
 
-app.get("/list-tours/:business_id", async (req, res) => {
-  const { business_id } = req.params;
+app.get("/list-tours/:business_id/:status?", async (req, res) => {
+  const { business_id, status } = req.params;
 
-  const query = `
+  let query = `
     SELECT
       t.tour_id,
       t.name AS tour_name,
@@ -335,12 +335,22 @@ app.get("/list-tours/:business_id", async (req, res) => {
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
     WHERE
       t.business_id = $1
+  `;
+
+  const params = [business_id];
+
+  if (status) {
+    query += ` AND t.status = $2`;
+    params.push(status);
+  }
+
+  query += `
     GROUP BY
       t.tour_id, dl.location_departure_id, tc.name
   `;
 
   try {
-    const result = await pool.query(query, [business_id]);
+    const result = await pool.query(query, params);
 
     const tours = result.rows.map((row) => ({
       ...row,
@@ -353,6 +363,7 @@ app.get("/list-tours/:business_id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 //-----------------------------------------------
 
@@ -968,7 +979,7 @@ app.get("/total-revenue/:businessId", async (req, res) => {
   try {
     const totalRevenueQuery = `
       SELECT 
-        SUM(total_price) AS total_revenue
+       COALESCE(SUM(total_price), 0) AS total_revenue
       FROM orders 
       WHERE business_id = $1 
       AND status_payment = 'Paid'
@@ -1453,6 +1464,34 @@ app.get(
     }
   }
 );
+
+app.put(
+  "/change-order-tour/:orderId",
+  authenticateToken,
+  async (req, res) => {
+    const { orderId } = req.params;
+    const { tourCode } = req.body;
+    try {
+      const query = `
+        UPDATE orders 
+        SET tour_id = $1
+        WHERE order_id = $2
+      `;
+      await pool.query(query, [tourCode, orderId]);
+
+      res.status(200).json({
+        message: "Order tour updated successfully",
+      });
+    } catch (error) {
+      console.error("Failed to update Order tour:", error);
+      res.status(500).json({ message: "Failed to update Order tour" });
+    }
+  }
+);
+
+
+
+
 
 // -----------------------------------------------
 module.exports = app;

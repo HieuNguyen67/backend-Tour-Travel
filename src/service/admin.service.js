@@ -1460,11 +1460,11 @@ app.get("/list-total-revenue-business", authenticateToken, async (req, res) => {
         o.status_payment_business,
         b.account_id
       FROM orders o
-      JOIN business b ON o.business_id = b.business_id
-      JOIN accounts a ON b.account_id = a.account_id
+      LEFT JOIN business b ON o.business_id = b.business_id
+      LEFT JOIN accounts a ON b.account_id = a.account_id
       WHERE o.status_payment = 'Paid'
       AND o.booking_date_time BETWEEN $1 AND $2
-      GROUP BY b.business_id, a.name,o.status_payment_business, b.account_id
+      GROUP BY b.business_id, a.name, o.status_payment_business, b.account_id
     `;
 
     const totalRevenueResult = await pool.query(totalRevenueQuery, [
@@ -1497,6 +1497,60 @@ app.get("/list-total-revenue-business", authenticateToken, async (req, res) => {
     });
   }
 });
+// -----------------------------------------------
+app.get(
+  "/total-revenue-business/:businessId",
+  authenticateToken,
+  async (req, res) => {
+    const { startDate, endDate, status_payment_business } = req.query;
+  const { businessId } = req.params;
+
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        message: "Vui lòng cung cấp cả ngày bắt đầu và ngày kết thúc.",
+      });
+    }
+
+    try {
+      const totalRevenueQuery = `
+       SELECT 
+        COALESCE(SUM(o.total_price), 0) AS total_revenue
+      FROM orders o
+      WHERE o.status_payment = 'Paid' AND o.status_payment_business= $1
+      AND o.booking_date_time BETWEEN $2 AND $3
+      AND o.business_id = $4
+    `;
+
+      const totalRevenueResult = await pool.query(totalRevenueQuery, [
+        status_payment_business,
+        startDate,
+        endDate,
+        businessId,
+      ]);
+
+      const totalRevenueList = totalRevenueResult.rows.map((row) => {
+        const totalRevenue = parseInt(row.total_revenue);
+        const serviceFee = totalRevenue * 0.1;
+        const netRevenue = totalRevenue - serviceFee;
+
+        return {
+        
+          total_revenue: totalRevenue,
+          service_fee: serviceFee,
+          net_revenue: netRevenue,
+        };
+      });
+
+      res.status(200).json({ total_revenue: totalRevenueList });
+    } catch (error) {
+      console.error("Lỗi khi tính tổng doanh thu:", error);
+      res.status(500).json({
+        message: "Lỗi khi tính tổng doanh thu. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+// -----------------------------------------------
 
 app.put(
   "/update-payment-status/:businessId",
