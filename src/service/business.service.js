@@ -1007,48 +1007,114 @@ app.get("/total-revenue/:businessId", async (req, res) => {
   }
 });
 
-app.get("/revenue-by-month/:businessId/:year", async (req, res) => {
-  const { businessId, year } = req.params;
+// -----------------------------------------------
+app.get(
+  "/total-revenue-business/:businessId",
+  authenticateToken,
+  async (req, res) => {
+    const { startDate, endDate, status_payment_business } = req.query;
+  const { businessId } = req.params;
 
-  try {
-    const months = Array.from({ length: 12 }, (_, i) => i + 1);
-    const initialData = months.map((month) => ({ month, total_revenue: 0 }));
+    if (!startDate || !endDate) {
+      return res.status(400).json({
+        message: "Vui lòng cung cấp cả ngày bắt đầu và ngày kết thúc.",
+      });
+    }
 
-    const revenueQuery = `
+    try {
+      const totalRevenueQuery = `
+       SELECT 
+        COALESCE(SUM(o.total_price), 0) AS total_revenue
+      FROM orders o
+      WHERE o.status_payment = 'Paid' AND o.status_payment_business= $1
+      AND o.booking_date_time BETWEEN $2 AND $3
+      AND o.business_id = $4
+    `;
+
+      const totalRevenueResult = await pool.query(totalRevenueQuery, [
+        status_payment_business,
+        startDate,
+        endDate,
+        businessId,
+      ]);
+
+      const totalRevenueList = totalRevenueResult.rows.map((row) => {
+        const totalRevenue = parseInt(row.total_revenue);
+        const serviceFee = totalRevenue * 0.1;
+        const netRevenue = totalRevenue - serviceFee;
+
+        return {
+        
+          total_revenue: totalRevenue,
+          service_fee: serviceFee,
+          net_revenue: netRevenue,
+        };
+      });
+
+      res.status(200).json({ total_revenue: totalRevenueList });
+    } catch (error) {
+      console.error("Lỗi khi tính tổng doanh thu:", error);
+      res.status(500).json({
+        message: "Lỗi khi tính tổng doanh thu. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+
+app.get(
+  "/revenue-by-month/:year/:businessId?",
+  authenticateToken,
+  async (req, res) => {
+    const { businessId, year } = req.params;
+
+    try {
+      const months = Array.from({ length: 12 }, (_, i) => i + 1);
+      const initialData = months.map((month) => ({ month, total_revenue: 0 }));
+
+      let revenueQuery = `
       SELECT 
         EXTRACT(MONTH FROM booking_date_time) AS month,
         SUM(total_price) AS total_revenue
       FROM orders
-      WHERE business_id = $1 
-      AND EXTRACT(YEAR FROM booking_date_time) = $2 
+      WHERE EXTRACT(YEAR FROM booking_date_time) = $1 
       AND status_payment = 'Paid'
-      GROUP BY month
-      ORDER BY month
     `;
 
-    const revenueResult = await pool.query(revenueQuery, [businessId, year]);
+      const queryParams = [year];
 
-    revenueResult.rows.forEach((row) => {
-      initialData[row.month - 1].total_revenue = parseFloat(row.total_revenue);
-    });
+      if (businessId) {
+        revenueQuery += ` AND business_id = $2`;
+        queryParams.push(businessId);
+      }
 
-    const allZero = initialData.every(
-      (monthData) => monthData.total_revenue === 0
-    );
+      revenueQuery += ` GROUP BY month ORDER BY month`;
 
-    if (allZero) {
-      res.status(200).json(null);
-    } else {
-      res.status(200).json(initialData);
+      const revenueResult = await pool.query(revenueQuery, queryParams);
+
+      revenueResult.rows.forEach((row) => {
+        initialData[row.month - 1].total_revenue = parseFloat(
+          row.total_revenue
+        );
+      });
+
+      const allZero = initialData.every(
+        (monthData) => monthData.total_revenue === 0
+      );
+
+      if (allZero) {
+        res.status(200).json(null);
+      } else {
+        res.status(200).json(initialData);
+      }
+    } catch (error) {
+      console.error("Lỗi khi lấy thống kê doanh thu theo tháng:", error);
+      res.status(500).json({
+        message:
+          "Lỗi khi lấy thống kê doanh thu theo tháng. Vui lòng thử lại sau.",
+      });
     }
-  } catch (error) {
-    console.error("Lỗi khi lấy thống kê doanh thu theo tháng:", error);
-    res.status(500).json({
-      message:
-        "Lỗi khi lấy thống kê doanh thu theo tháng. Vui lòng thử lại sau.",
-    });
   }
-});
+);
 
 app.get(
   "/order-status-ratio/:businessId",
