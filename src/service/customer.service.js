@@ -1408,5 +1408,88 @@ app.get("/download-excel-template", async (req, res) => {
   res.end();
 });
 
+
+app.get(
+  "/suggest-tours/:customerId",
+  async (req, res) => {
+    const { customerId } = req.params;
+    try {
+      const pastToursQuery = `
+      SELECT DISTINCT o.tour_id 
+      FROM orders o
+      JOIN tours t ON o.tour_id = t.tour_id
+      WHERE o.customer_id = $1
+      AND o.status_payment = 'Paid'
+    `;
+      const pastToursResult = await pool.query(pastToursQuery, [customerId]);
+      const pastTourIds = pastToursResult.rows.map((row) => row.tour_id);
+
+      if (pastTourIds.length === 0) {
+        return res.status(200).json({ suggestedTours: [] });
+      }
+
+      const locationQuery = `
+      SELECT dl.location_departure_id, dl.tour_id AS departure_tour_id, 
+             destl.location_destination_id, destl.tour_id AS destination_tour_id
+      FROM departurelocation dl
+      FULL JOIN destinationlocation destl ON dl.tour_id = destl.tour_id
+      WHERE dl.tour_id = ANY($1) OR destl.tour_id = ANY($1)
+    `;
+      const locationResult = await pool.query(locationQuery, [pastTourIds]);
+
+      const departureLocationIds = locationResult.rows.map(
+        (row) => row.location_departure_id
+      );
+  
+      const destinationLocationIds = locationResult.rows.map(
+        (row) => row.location_destination_id
+      );
+
+
+      const suggestedToursQuery = `
+      SELECT   
+      t.tour_id,
+      t.name AS tour_name,
+      t.tour_code,
+      t.adult_price,
+      t.child_price,
+      t.infant_price,
+      t.start_date,
+      t.end_date,
+      t.quantity,
+      t.status,
+      t.created_at,
+      t.vehicle,
+      t.hotel,
+      dl.location_departure_id,
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
+      array_agg(destl.location_destination_id) AS destination_locations
+
+      FROM tours t
+      LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+      LEFT JOIN destinationlocation destl ON t.tour_id = destl.tour_id
+      WHERE (dl.location_departure_id = ANY($1) OR destl.location_destination_id = ANY($2))
+      AND t.status = 'Active'
+      GROUP BY  t.tour_id, dl.location_departure_id
+    `;
+      const suggestedToursResult = await pool.query(suggestedToursQuery, [
+        departureLocationIds,
+        destinationLocationIds,
+      ]);
+      
+        const tours = suggestedToursResult.rows.map((row) => ({
+          ...row,
+          image: row.image ? row.image.toString("base64") : null,
+        }));
+
+      res.status(200).json({ suggestedTours: tours });
+    } catch (error) {
+      console.error("Lỗi khi gợi ý tour:", error);
+      res.status(500).json({
+        message: "Lỗi khi gợi ý tour. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
 // -----------------------------------------------
 module.exports = app;

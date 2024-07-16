@@ -697,6 +697,7 @@ app.get("/tours-rating/:businessId", async (req, res) => {
     const query = `
       SELECT 
         t.tour_id, 
+        t.tour_code,
         t.name AS tour_name, 
         COALESCE(AVG(r.rating), 0) AS average_rating, 
         COUNT(r.rating_id) AS total_ratings,
