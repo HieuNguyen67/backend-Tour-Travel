@@ -322,6 +322,7 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
       t.vehicle,
       t.hotel,
       dl.location_departure_id,
+      ldep.location_name as departure_location_name,
       tc.name AS tourcategory_name,
       (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
       array_agg(dsl.location_destination_id) AS destination_locations
@@ -330,11 +331,18 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
     LEFT JOIN
       departurelocation dl ON t.tour_id = dl.tour_id
     LEFT JOIN
+      locations ldep ON dl.location_departure_id = ldep.location_id
+    LEFT JOIN
+      business b ON t.business_id = b.business_id
+    LEFT JOIN 
+      accounts a ON b.account_id = a.account_id
+    LEFT JOIN
       destinationlocation dsl ON t.tour_id = dsl.tour_id
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
+
     WHERE
-      t.business_id = $1
+      t.business_id = $1  AND a.status = 'Active'
   `;
 
   const params = [business_id];
@@ -346,7 +354,8 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
 
   query += `
     GROUP BY
-      t.tour_id, dl.location_departure_id, tc.name
+      t.tour_id, dl.location_departure_id, tc.name, departure_location_name
+      ORDER BY  t.start_date ASC
   `;
 
   try {

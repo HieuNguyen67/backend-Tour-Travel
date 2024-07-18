@@ -8,7 +8,7 @@ const moment = require("moment");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const crypto = require("crypto");
-const uuid = require("uuid");
+const { v4: uuidv4 } = require("uuid"); 
 const bodyParser = require("body-parser");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { generateRandomCode } = require("../middlewares/randomcode.js");
@@ -194,9 +194,7 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 //-----------------------------------------------
 
 app.get("/list-tours-filter", async (req, res) => {
-  const {
-    tourcategory_name
-  } = req.query;
+  const { tourcategory_name } = req.query;
   if (!tourcategory_name) {
     return res.status(400).json({ error: "tourcategory_name is required" });
   }
@@ -331,70 +329,13 @@ app.get("/coupons/:customerId", async (req, res) => {
 
 //-----------------------------------------------
 
-app.post("/daily-checkin/:customerId", async (req, res) => {
-  const customerId = req.params.customerId;
-  const currentDate = moment().tz("Asia/Ho_Chi_Minh").format("YYYY-MM-DD");
-
-  try {
-    const checkinQuery = `
-      SELECT * FROM daily_checkin 
-      WHERE customer_id = $1 AND checkindate = $2
-    `;
-    const checkinResult = await pool.query(checkinQuery, [
-      customerId,
-      currentDate,
-    ]);
-
-    if (checkinResult.rows.length > 0) {
-      return res.status(400).json({
-        message: "Bạn đã điểm danh hôm nay. Vui lòng quay lại ngày sau !",
-      });
-    }
-
-    const insertCheckinQuery = `
-      INSERT INTO daily_checkin (customer_id, checkindate) 
-      VALUES ($1, $2)
-    `;
-    await pool.query(insertCheckinQuery, [customerId, currentDate]);
-
-    const insertCouponQuery = `
-      INSERT INTO coupons (customer_id, points, description, created_at, expires_at, is_used) 
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `;
-    const points = 1000;
-    const description = "Điểm danh hằng ngày";
-    const createAt = new Date().toISOString();
-    const expiresAt = new Date(
-      new Date().setDate(new Date().getDate() + 30)
-    ).toISOString();
-    const isUsed = "Unused";
-
-    await pool.query(insertCouponQuery, [
-      customerId,
-      points,
-      description,
-      currentDate,
-      expiresAt,
-      isUsed,
-    ]);
-
-    res
-      .status(200)
-      .json({ message: "Điểm danh thành công và đã nhận được Xu" });
-  } catch (error) {
-    console.error("Error during daily check-in:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-//-----------------------------------------------
 
 app.post(
-  "/book-tour/:tourId/:customerId",
+  "/book-tour/:tourId/:customerId/:shareToken?",
   authenticateToken,
   upload.single("file"),
   async (req, res) => {
-    const { tourId, customerId } = req.params;
+    const { tourId, customerId, shareToken } = req.params;
     const {
       adult_quantity,
       child_quantity,
@@ -469,25 +410,74 @@ app.post(
         passengers = passengersFromBody;
         var passengersParse = JSON.parse(passengers);
       }
+
+
+      let validShareToken = null;
+
+      if (shareToken) {
+
+        const checkshareTokenQuery = `
+          SELECT * FROM shared_links 
+          WHERE share_token = $1 
+          AND customer_id = $2
+        `;
+        const checkCustomerShareTokenResult = await pool.query(
+          checkshareTokenQuery,
+          [shareToken, customerId]
+        );
+
+          if (checkCustomerShareTokenResult.rows.length === 0) {
+              const shareTokenQuery = `
+          SELECT * FROM shared_links 
+          WHERE share_token = $1 
+          AND tour_id = $2
+        `;
+              const shareTokenResult = await pool.query(shareTokenQuery, [
+                shareToken,
+                tourId,
+              ]);
+
+              if (shareTokenResult.rows.length > 0) {
+                const checkOrderQuery = `
+          SELECT * FROM orders 
+          WHERE customer_id = $1 
+          AND share_token = $2
+        `;
+                const checkOrderParams = [customerId, shareToken];
+                const checkOrderResult = await pool.query(
+                  checkOrderQuery,
+                  checkOrderParams
+                );
+
+                if (checkOrderResult.rows.length === 0) {
+                  validShareToken = shareToken;
+                }
+              }
+          }
+        
+      }
+
       const orderQuery = `
-      INSERT INTO orders (
-        tour_id, 
-        adult_quantity, 
-        child_quantity, 
-        infant_quantity, 
-        total_price, 
-        status_payment, 
-        booking_date_time, 
-        note, 
-        customer_id, 
-        business_id, 
-        code_order, 
-        status, 
-        status_rating,
-        status_request_cancel, 
-        status_payment_business
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid') RETURNING *
-    `;
+        INSERT INTO orders (
+          tour_id, 
+          adult_quantity, 
+          child_quantity, 
+          infant_quantity, 
+          total_price, 
+          status_payment, 
+          booking_date_time, 
+          note, 
+          customer_id, 
+          business_id, 
+          code_order, 
+          status, 
+          status_rating,
+          status_request_cancel, 
+          status_payment_business,
+          share_token,
+          status_add_coupons
+        ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid', $11, 'No') RETURNING *
+      `;
 
       const code_order = generateRandomCode(10);
 
@@ -502,13 +492,14 @@ app.post(
         customerId,
         tour.business_id,
         code_order,
+        validShareToken,
       ]);
       const orderId = orderResult.rows[0].order_id;
 
       const passengerInsertQuery = `
-      INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
-      VALUES ($1, $2, $3, $4, $5, $6)
-    `;
+        INSERT INTO passengers (order_id, name, birthdate, gender, passport_number, type) 
+        VALUES ($1, $2, $3, $4, $5, $6)
+      `;
       for (const passenger of passengersParse) {
         await pool.query(passengerInsertQuery, [
           orderId,
@@ -521,10 +512,10 @@ app.post(
       }
 
       const updateTourQuery = `
-      UPDATE tours 
-      SET quantity = quantity - $1 
-      WHERE tour_id = $2
-    `;
+        UPDATE tours 
+        SET quantity = quantity - $1 
+        WHERE tour_id = $2
+      `;
       await pool.query(updateTourQuery, [total_quantity, tourId]);
 
       const orderDetails = await getOrderDetails(orderId);
@@ -542,6 +533,7 @@ app.post(
     }
   }
 );
+
 
 async function getOrderDetails(orderId) {
   const orderDetailQuery = `
@@ -1409,87 +1401,91 @@ app.get("/download-excel-template", async (req, res) => {
 });
 
 
-app.get(
-  "/suggest-tours/:customerId",
-  async (req, res) => {
-    const { customerId } = req.params;
-    try {
-      const pastToursQuery = `
-      SELECT DISTINCT o.tour_id 
-      FROM orders o
-      JOIN tours t ON o.tour_id = t.tour_id
-      WHERE o.customer_id = $1
-      AND o.status_payment = 'Paid'
+// -----------------------------------------------
+
+app.post("/share-tour/:tourId/:customerId", async (req, res) => {
+  const { tourId, customerId } = req.params;
+  const currentDateTime = moment()
+    .tz("Asia/Ho_Chi_Minh")
+    .format("YYYY-MM-DD HH:mm:ss");
+
+  try {
+    const existingLinkQuery = `
+      SELECT * FROM shared_links
+      WHERE tour_id = $1 AND customer_id = $2
     `;
-      const pastToursResult = await pool.query(pastToursQuery, [customerId]);
-      const pastTourIds = pastToursResult.rows.map((row) => row.tour_id);
+    const existingLinkResult = await pool.query(existingLinkQuery, [
+      tourId,
+      customerId,
+    ]);
 
-      if (pastTourIds.length === 0) {
-        return res.status(200).json({ suggestedTours: [] });
-      }
+    if (existingLinkResult.rows.length > 0) {
+      const existingLink = existingLinkResult.rows[0];
+      const shareLink = `http://localhost:3000/tour-share-link/${existingLink.tour_id}/${existingLink.share_token}`;
 
-      const locationQuery = `
-      SELECT dl.location_departure_id, dl.tour_id AS departure_tour_id, 
-             destl.location_destination_id, destl.tour_id AS destination_tour_id
-      FROM departurelocation dl
-      FULL JOIN destinationlocation destl ON dl.tour_id = destl.tour_id
-      WHERE dl.tour_id = ANY($1) OR destl.tour_id = ANY($1)
-    `;
-      const locationResult = await pool.query(locationQuery, [pastTourIds]);
-
-      const departureLocationIds = locationResult.rows.map(
-        (row) => row.location_departure_id
-      );
-  
-      const destinationLocationIds = locationResult.rows.map(
-        (row) => row.location_destination_id
-      );
-
-
-      const suggestedToursQuery = `
-      SELECT   
-      t.tour_id,
-      t.name AS tour_name,
-      t.tour_code,
-      t.adult_price,
-      t.child_price,
-      t.infant_price,
-      t.start_date,
-      t.end_date,
-      t.quantity,
-      t.status,
-      t.created_at,
-      t.vehicle,
-      t.hotel,
-      dl.location_departure_id,
-      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
-      array_agg(destl.location_destination_id) AS destination_locations
-
-      FROM tours t
-      LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
-      LEFT JOIN destinationlocation destl ON t.tour_id = destl.tour_id
-      WHERE (dl.location_departure_id = ANY($1) OR destl.location_destination_id = ANY($2))
-      AND t.status = 'Active'
-      GROUP BY  t.tour_id, dl.location_departure_id
-    `;
-      const suggestedToursResult = await pool.query(suggestedToursQuery, [
-        departureLocationIds,
-        destinationLocationIds,
-      ]);
-      
-        const tours = suggestedToursResult.rows.map((row) => ({
-          ...row,
-          image: row.image ? row.image.toString("base64") : null,
-        }));
-
-      res.status(200).json({ suggestedTours: tours });
-    } catch (error) {
-      console.error("Lỗi khi gợi ý tour:", error);
-      res.status(500).json({
-        message: "Lỗi khi gợi ý tour. Vui lòng thử lại sau.",
+      return res.status(200).json({
+        message: "Link chia sẻ tour đã tồn tại!",
+        shareLink,
       });
     }
+
+    const shareToken = uuidv4();
+
+    const createShareLinkQuery = `
+      INSERT INTO shared_links (tour_id, customer_id, share_token, created_at)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const { rows } = await pool.query(createShareLinkQuery, [
+      tourId,
+      customerId,
+      shareToken,
+      currentDateTime,
+    ]);
+    const shareLink = `http://localhost:3000/tour-share-link/${rows[0].tour_id}/${rows[0].share_token}`;
+
+    res.status(201).json({
+      message: "Đã tạo link chia sẻ tour thành công!",
+      shareLink,
+    });
+  } catch (error) {
+    console.error("Lỗi khi tạo link chia sẻ tour:", error);
+    res.status(500).json({
+      message: "Lỗi khi tạo link chia sẻ tour. Vui lòng thử lại sau.",
+    });
   }
-);
+});
+
+// -----------------------------------------------
+
+app.get("/shared-tour/:shareToken", async (req, res) => {
+  const { shareToken } = req.params;
+
+  try {
+    const getShareLinkQuery = `
+      SELECT tour_id, share_token
+      FROM shared_links
+      WHERE share_token = $1
+    `;
+    const { rows } = await pool.query(getShareLinkQuery, [shareToken]);
+
+    if (rows.length === 0) {
+      return res
+        .status(404)
+        .json({ message: "Link chia sẻ không hợp lệ ." });
+    }
+
+
+    res.status(200).json({
+      message: "Link chia sẻ hợp lệ.",
+      shareToken,
+    });
+  } catch (error) {
+    console.error("Lỗi khi truy cập link chia sẻ:", error);
+    res.status(500).json({
+      message: "Lỗi khi truy cập link chia sẻ. Vui lòng thử lại sau.",
+    });
+  }
+});
 // -----------------------------------------------
 module.exports = app;

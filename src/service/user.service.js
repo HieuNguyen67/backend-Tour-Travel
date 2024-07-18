@@ -435,7 +435,8 @@ app.get("/list-news-travel/:category", async (req, res) => {
 app.get("/locations", async (req, res) => {
   const { location_type } = req.query;
   try {
-    const query = "SELECT * FROM locations WHERE location_type =$1";
+    const query =
+      "SELECT * FROM locations WHERE location_type = $1 ORDER BY location_name ASC";
     const result = await pool.query(query, [location_type]);
     res.json(result.rows);
   } catch (error) {
@@ -443,6 +444,7 @@ app.get("/locations", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 //-----------------------------------------------
 
