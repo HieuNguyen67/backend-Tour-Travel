@@ -1571,6 +1571,59 @@ app.put(
   }
 );
 
+// -----------------------------------------------
 
+const updatePoints = async () => {
+      const currentDateTime = moment()
+        .tz("Asia/Ho_Chi_Minh")
+        .format("YYYY-MM-DD HH:mm:ss");
+  try {
+    const selectOrdersQuery = `
+      SELECT o.order_id, o.tour_id, o.customer_id, o.business_id, o.share_token, s.customer_id AS shared_by_customer_id
+      FROM orders o
+      JOIN shared_links s ON o.share_token = s.share_token
+      WHERE o.status_add_coupons = 'No'
+      AND o.status = 'Confirm'
+      AND o.status_payment = 'Paid'
+    `;
+    const ordersResult = await pool.query(selectOrdersQuery);
+    const orders = ordersResult.rows;
+
+    for (const order of orders) {
+      const { order_id, business_id, shared_by_customer_id } = order;
+      const expiresAt = moment()
+        .tz("Asia/Ho_Chi_Minh")
+        .add(30, "days")
+        .format("YYYY-MM-DD HH:mm:ss");
+
+      const addPointsQuery = `
+        INSERT INTO coupons (customer_id, points, description, created_at, expires_at, is_used, business_id)
+        VALUES ($1, $2, $3, $4, $5, 'Unused', $6)
+      `;
+      await pool.query(addPointsQuery, [
+        shared_by_customer_id,
+        5000, 
+        `Chia sẻ tour thành công !`,
+        currentDateTime,
+        expiresAt,
+        business_id,
+        
+      ]);
+
+      const updateOrderQuery = `
+        UPDATE orders
+        SET status_add_coupons = 'Yes'
+        WHERE order_id = $1
+      `;
+      await pool.query(updateOrderQuery, [order_id]);
+    }
+
+    console.log(`Updated points for ${orders.length} orders`);
+  } catch (error) {
+    console.error("Error updating points:", error);
+  }
+};
+
+cron.schedule("0 * * * *", updatePoints);
 // -----------------------------------------------
 module.exports = app;

@@ -492,7 +492,7 @@ app.post(
         customerId,
         tour.business_id,
         code_order,
-        validShareToken,
+        validShareToken
       ]);
       const orderId = orderResult.rows[0].order_id;
 
@@ -659,11 +659,11 @@ const momoConfig = {
 };
 
 app.post(
-  "/book-tour-momopay/:tourId/:customerId",
+  "/book-tour-momopay/:tourId/:customerId/:shareToken?",
   authenticateToken,
   upload.single("file"),
   async (req, res) => {
-    const { tourId, customerId } = req.params;
+    const { tourId, customerId, shareToken } = req.params;
     const {
       adult_quantity,
       child_quantity,
@@ -738,14 +738,57 @@ app.post(
         var passengersParse = JSON.parse(passengers);
       }
 
+      let validShareToken = null;
+
+      if (shareToken) {
+        const checkshareTokenQuery = `
+          SELECT * FROM shared_links 
+          WHERE share_token = $1 
+          AND customer_id = $2
+        `;
+        const checkCustomerShareTokenResult = await pool.query(
+          checkshareTokenQuery,
+          [shareToken, customerId]
+        );
+
+        if (checkCustomerShareTokenResult.rows.length === 0) {
+          const shareTokenQuery = `
+          SELECT * FROM shared_links 
+          WHERE share_token = $1 
+          AND tour_id = $2
+        `;
+          const shareTokenResult = await pool.query(shareTokenQuery, [
+            shareToken,
+            tourId,
+          ]);
+
+          if (shareTokenResult.rows.length > 0) {
+            const checkOrderQuery = `
+          SELECT * FROM orders 
+          WHERE customer_id = $1 
+          AND share_token = $2
+        `;
+            const checkOrderParams = [customerId, shareToken];
+            const checkOrderResult = await pool.query(
+              checkOrderQuery,
+              checkOrderParams
+            );
+
+            if (checkOrderResult.rows.length === 0) {
+              validShareToken = shareToken;
+            }
+          }
+        }
+      }
+
       const code_order = generateRandomCode(10);
 
       const orderQuery = `
       INSERT INTO orders (
         tour_id, adult_quantity, child_quantity, infant_quantity, total_price,
         status_payment, booking_date_time, note, customer_id, business_id, 
-        code_order, status, status_rating, status_request_cancel, status_payment_business
-      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid')
+        code_order, status, status_rating, status_request_cancel, status_payment_business, share_token, status_add_coupons
+      ) VALUES ($1, $2, $3, $4, $5, 'Unpaid', $6, $7, $8, $9, $10, 'Pending', 'Not Rated', 'No', 'Unpaid', $11, 'No')
       RETURNING *
     `;
 
@@ -760,6 +803,7 @@ app.post(
         customerId,
         tour.business_id,
         code_order,
+        validShareToken
       ]);
 
       const order = orderResult.rows[0];
