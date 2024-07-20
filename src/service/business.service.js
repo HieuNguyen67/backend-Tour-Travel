@@ -196,6 +196,45 @@ app.put(
 
 
 //-----------------------------------------------
+function validateTour(data) {
+  const errors = [];
+
+  if (data.adult_price < 0 || data.adult_price % 10 !== 0) {
+    errors.push("Giá cho người lớn phải không âm và là bội số của 10.");
+  }
+  if (data.child_price < 0 || data.child_price % 10 !== 0) {
+    errors.push("Giá cho trẻ em phải không âm và là bội số của 10.");
+  }
+  if (data.infant_price < 0 || data.infant_price % 10 !== 0) {
+    errors.push("Giá cho trẻ sơ sinh phải không âm và là bội số của 10.");
+  }
+  if (new Date(data.start_date) < new Date()) {
+    errors.push("Ngày bắt đầu phải trong tương lai.");
+  }
+  if (new Date(data.end_date) <= new Date(data.start_date)) {
+    errors.push("Ngày kết thúc phải sau ngày bắt đầu.");
+  }
+  if ((new Date(data.end_date) - new Date(data.start_date)) > 365 * 24 * 60 * 60 * 1000) {
+    errors.push("Tour không thể kéo dài hơn một năm.");
+  }
+  if (data.quantity < 1 || data.quantity > 50) {
+    errors.push("Số lượng phải từ 1 đến 50.");
+  }
+  if (data.status === 'Inactive' && new Date(data.start_date) <= new Date() && data.quantity > 0) {
+    errors.push("Tour không thể ở trạng thái không hoạt động nếu đã bắt đầu và có đặt chỗ.");
+  }
+  if (data.adult_price <= data.child_price || data.child_price <= data.infant_price) {
+    errors.push("Giá cho người lớn phải lớn hơn giá cho trẻ em, và giá cho trẻ em phải lớn hơn giá cho trẻ sơ sinh.");
+  }
+  if (data.description && (data.description.length < 10 || !/^[\w\s.,!?-]+$/.test(data.description))) {
+    errors.push("Thông tin về lịch trình phải dài ít nhất 10 ký tự và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu câu cơ bản).");
+  }
+  if (!data.name || data.name.length > 100 || !/^[\w\s-]+$/.test(data.name)) {
+    errors.push("Tên tour không được để trống, không được dài quá 100 ký tự, và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu gạch ngang).");
+  }
+
+  return errors;
+}
 
 app.post(
   "/add-tours/:business_id",
@@ -223,6 +262,11 @@ app.post(
         destination_locations,
         tour_code
       } = req.body;
+
+       const errors = validateTour(req.body);
+       if (errors.length > 0) {
+         return res.status(400).json({ errors });
+       }
 
       if (!req.files || req.files.length === 0) {
         return res
