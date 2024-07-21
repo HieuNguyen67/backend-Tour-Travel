@@ -21,11 +21,54 @@ pool.connect((err) => {
 });
 
 //-----------------------------------------------
+function validateLogin(data) {
+  const errors = [];
+
+  if (!data.usernameOrEmail) {
+    errors.push("Tên đăng nhập hoặc email là bắt buộc.");
+  } else if (
+    typeof data.usernameOrEmail !== "string" ||
+    data.usernameOrEmail.trim() === ""
+  ) {
+    errors.push("Tên đăng nhập hoặc email không hợp lệ.");
+  } else if (
+    !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(
+      data.usernameOrEmail
+    ) &&
+    !/^[a-zA-Z0-9_.-]{3,}$/.test(data.usernameOrEmail)
+  ) {
+    errors.push("Tên đăng nhập hoặc email không đúng định dạng.");
+  }
+
+  if (!data.password) {
+    errors.push("Mật khẩu là bắt buộc.");
+  } else if (typeof data.password !== "string" || data.password.length < 5) {
+    errors.push("Mật khẩu phải có ít nhất 5 ký tự.");}
+  else if (/\s/.test(data.password)) {
+    errors.push("Mật khẩu không được chứa dấu cách.");
+  } 
+  // else if (!/[A-Z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết hoa.");
+  // } else if (!/[a-z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết thường.");
+  // } else if (!/[0-9]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ số.");
+  // } else if (!/[!@#$%^&*]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*).");
+  // }
+
+  return errors;
+}
 
 app.post("/login", async (req, res) => {
   const { usernameOrEmail, password } = req.body;
 
   try {
+     const errors = validateLogin(req.body);
+     if (errors.length > 0) {
+       return res.status(400).json({ errors });
+     }
+
     const query = `
       SELECT 
        a.*, bs.business_id, c.customer_id, ad.admin_id
@@ -172,6 +215,59 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
 });
 
 //-----------------------------------------------
+function validateUpdateAccount(data) {
+  const errors = [];
+
+  if (!data.username) {
+    errors.push("Tên đăng nhập là bắt buộc.");
+  } else if (typeof data.username !== "string" || data.username.trim() === "") {
+    errors.push("Tên đăng nhập không hợp lệ.");
+  } else if (data.username.length < 3) {
+    errors.push("Tên đăng nhập phải có ít nhất 3 ký tự.");
+  } else if (/\s/.test(data.username)) {
+    errors.push("Username không được chứa dấu cách.");
+  } 
+
+  if (data.name && (typeof data.name !== "string" || data.name.trim() === "")) {
+    errors.push("Tên không hợp lệ.");
+  } else if (/[!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  }
+
+  if (data.birth_of_date && isNaN(Date.parse(data.birth_of_date))) {
+    errors.push("Ngày sinh không hợp lệ.");
+  }
+
+  if (data.phone_number && !/^\d{10}$/.test(data.phone_number)) {
+    errors.push("Số điện thoại phải có 10 chữ số.");
+  }
+
+  if (
+    data.address &&
+    (typeof data.address !== "string" || data.address.trim() === "")
+  ) {
+    errors.push("Địa chỉ không hợp lệ.");
+  }
+
+  
+
+  if (
+    data.bank_account_name &&
+    (typeof data.bank_account_name !== "string" ||
+      data.bank_account_name.trim() === "")
+  ) {
+    errors.push("Tên tài khoản ngân hàng không hợp lệ.");
+  } else if (/[!@#$%^&*]/.test(data.bank_account_name)) {
+    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  }
+
+  if (data.bank_account_number && !/^\d+$/.test(data.bank_account_number)) {
+    errors.push("Số tài khoản ngân hàng chỉ được chứa chữ số.");
+  }
+
+
+  return errors;
+}
 
 app.put("/account/:id", authenticateToken, async (req, res) => {
   const accountId = req.params.id;
@@ -190,6 +286,10 @@ app.put("/account/:id", authenticateToken, async (req, res) => {
   const role = req.query.role;
 
   try {
+    const errors = validateUpdateAccount(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ errors });
+    }
     let updateAccountQuery = `
       UPDATE accounts
       SET username = $1, name = $2, birth_of_date = $3, phone_number = $4, address = $5, status = $6, note = $7

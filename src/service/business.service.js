@@ -25,6 +25,74 @@ pool.connect((err) => {
 });
 
 //-----------------------------------------------
+function validateRegister(data) {
+  const errors = [];
+
+  if (!data.username) {
+    errors.push("Tên đăng nhập là bắt buộc.");
+  } else if (typeof data.username !== "string" || data.username.trim() === "") {
+    errors.push("Tên đăng nhập không hợp lệ.");
+  } else if (data.username.length < 3) {
+    errors.push("Tên đăng nhập phải có ít nhất 3 ký tự.");
+  } else if (/\s/.test(data.username)) {
+    errors.push("Username không được chứa dấu cách.");
+  }
+
+  if (!data.password) {
+    errors.push("Mật khẩu là bắt buộc.");
+  } else if (typeof data.password !== "string" || data.password.length < 8) {
+    errors.push("Mật khẩu phải có ít nhất 8 ký tự.");
+  } else if (/\s/.test(data.password)) {
+    errors.push("Mật khẩu không được chứa dấu cách.");
+  }
+  // else if (!/[A-Z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết hoa.");
+  // } else if (!/[a-z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết thường.");
+  // } else if (!/[0-9]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ số.");
+  // } else if (!/[!@#$%^&*]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*).");
+  // }
+
+  if (!data.email) {
+    errors.push("Email là bắt buộc.");
+  } else if (typeof data.email !== "string" || data.email.trim() === "") {
+    errors.push("Email không hợp lệ.");
+  } else if (
+    !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(data.email)
+  ) {
+    errors.push("Email không đúng định dạng.");
+  }
+
+  if (!data.name) {
+    errors.push("Tên là bắt buộc.");
+  } else if (typeof data.name !== "string" || data.name.trim() === "") {
+    errors.push("Tên không hợp lệ.");
+  } else if (/[!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  }
+
+  if (!data.birth_of_date) {
+    errors.push("Ngày sinh là bắt buộc.");
+  } else if (isNaN(Date.parse(data.birth_of_date))) {
+    errors.push("Ngày sinh không hợp lệ.");
+  }
+
+  if (!data.phone_number) {
+    errors.push("Số điện thoại là bắt buộc.");
+  } else if (!/^\d{10}$/.test(data.phone_number)) {
+    errors.push("Số điện thoại phải có 10 chữ số.");
+  }
+
+  if (!data.address) {
+    errors.push("Địa chỉ là bắt buộc.");
+  } else if (typeof data.address !== "string" || data.address.trim() === "") {
+    errors.push("Địa chỉ không hợp lệ.");
+  }
+
+  return errors;
+}
 
 app.post("/register-business/:adminId", authenticateToken, async (req, res) => {
   const {
@@ -37,6 +105,11 @@ app.post("/register-business/:adminId", authenticateToken, async (req, res) => {
     email,
   } = req.body;
   const adminId = req.params.adminId;
+
+   const errors = validateRegister(req.body);
+   if (errors.length > 0) {
+     return res.status(400).json({ errors });
+   }
 
   try {
     const checkExistingQuery =
@@ -456,6 +529,12 @@ app.put(
         return res.status(404).json({ error: "Tour not found" });
       }
 
+      
+       const errors = validateTour(req.body);
+       if (errors.length > 0) {
+         return res.status(400).json({ errors });
+       }
+
       await pool.query(
         `UPDATE tours
         SET name = $1,
@@ -574,6 +653,7 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
   }
 
   try {
+
     const insertQuery = `
       INSERT INTO policies (business_id, policytype, description)
       VALUES ($1, $2, $3)
@@ -605,6 +685,18 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
   }
 
   try {
+     const checkExistingQuery =
+       "SELECT * FROM policy_cancellation WHERE days_before_departure = $1 AND refund_percentage = $2 AND type = $3  AND business_id = $4 ";
+     const existingResult = await pool.query(checkExistingQuery, [
+       days_before_departure,
+       refund_percentage,
+       type,
+       businessId,
+     ]);
+     if (existingResult.rows.length > 0) {
+       return res.status(400).json({ message: "Chính sách này đã tồn tại !." });
+     }
+     
     const result = await pool.query(
       "INSERT INTO policy_cancellation (days_before_departure, refund_percentage, business_id, type) VALUES ($1, $2, $3, $4) RETURNING *",
       [days_before_departure, refund_percentage, businessId, type]

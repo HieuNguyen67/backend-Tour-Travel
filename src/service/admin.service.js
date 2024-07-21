@@ -49,7 +49,76 @@ pool.connect((err) => {
 });
 
 //-----------------------------------------------
+function validateRegister(data) {
+  const errors = [];
 
+  if (!data.username) {
+    errors.push("Tên đăng nhập là bắt buộc.");
+  } else if (typeof data.username !== "string" || data.username.trim() === "") {
+    errors.push("Tên đăng nhập không hợp lệ.");
+  } else if (data.username.length < 3) {
+    errors.push("Tên đăng nhập phải có ít nhất 3 ký tự.");
+  } else if (/\s/.test(data.username)) {
+    errors.push("Username không được chứa dấu cách.");
+  }
+
+  if (!data.password) {
+    errors.push("Mật khẩu là bắt buộc.");
+  } else if (typeof data.password !== "string" || data.password.length < 8) {
+    errors.push("Mật khẩu phải có ít nhất 8 ký tự.");
+  } else if (/\s/.test(data.password)) {
+    errors.push("Mật khẩu không được chứa dấu cách.");
+  }
+  // else if (!/[A-Z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết hoa.");
+  // } else if (!/[a-z]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết thường.");
+  // } else if (!/[0-9]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một chữ số.");
+  // } else if (!/[!@#$%^&*]/.test(data.password)) {
+  //   errors.push("Mật khẩu phải chứa ít nhất một ký tự đặc biệt (!@#$%^&*).");
+  // }
+
+  if (!data.email) {
+    errors.push("Email là bắt buộc.");
+  } else if (typeof data.email !== "string" || data.email.trim() === "") {
+    errors.push("Email không hợp lệ.");
+  } else if (
+    !/^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/.test(data.email)
+  ) {
+    errors.push("Email không đúng định dạng.");
+  }
+
+  if (!data.name) {
+    errors.push("Tên là bắt buộc.");
+  } else if (typeof data.name !== "string" || data.name.trim() === "") {
+    errors.push("Tên không hợp lệ.");
+  } else if (/[!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  }
+  
+    if (!data.birth_of_date) {
+      errors.push("Ngày sinh là bắt buộc.");
+    } else if (isNaN(Date.parse(data.birth_of_date))) {
+      errors.push("Ngày sinh không hợp lệ.");
+    }
+
+  // Validate phone_number
+  if (!data.phone_number) {
+    errors.push("Số điện thoại là bắt buộc.");
+  } else if (!/^\d{10}$/.test(data.phone_number)) {
+    errors.push("Số điện thoại phải có 10 chữ số.");
+  }
+
+  // Validate address
+  if (!data.address) {
+    errors.push("Địa chỉ là bắt buộc.");
+  } else if (typeof data.address !== "string" || data.address.trim() === "") {
+    errors.push("Địa chỉ không hợp lệ.");
+  }
+
+  return errors;
+}
 app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
   const {
     username,
@@ -64,6 +133,11 @@ app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
   const adminId = req.params.adminId;
 
   try {
+     const errors = validateRegister(req.body);
+     if (errors.length > 0) {
+       return res.status(400).json({ errors });
+     }
+
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
     const existingResult = await pool.query(checkExistingQuery, [
@@ -260,6 +334,43 @@ app.get("/get-admins", authenticateToken, async (req, res) => {
 });
 
 //-----------------------------------------------
+function validateNews(data) {
+  const errors = [];
+
+  if (
+    !data.title ||
+    typeof data.title !== "string" ||
+    data.title.trim() === ""
+  ) {
+    errors.push("Tiêu đề không được để trống và phải là chuỗi văn bản.");
+  } 
+  // else if (data.title.length > 100) {
+  //   errors.push("Tiêu đề không được vượt quá 100 ký tự.");
+  // } 
+  else if (/[^a-zA-Z0-9\s\p{P}]/u.test(data.title)) {
+    errors.push(
+      "Tiêu đề chỉ được chứa chữ cái, số, khoảng trắng và ký tự đặc biệt hợp lệ."
+    );
+  }
+
+  if (
+    !data.content ||
+    typeof data.content !== "string" ||
+    data.content.trim() === ""
+  ) {
+    errors.push("Nội dung không được để trống và phải là chuỗi văn bản.");
+  } 
+  // else if (data.content.length > 2000) {
+  //   errors.push("Nội dung không được vượt quá 2000 ký tự.");
+  // }
+
+  
+   if (req.file && !["image/jpeg", "image/png"].includes(req.file.mimetype)) {
+     errors.push("Ảnh phải là định dạng JPEG hoặc PNG.");
+   }
+
+  return errors;
+}
 
 app.post(
   "/add-news/:account_id/:adminId?",
@@ -273,6 +384,10 @@ app.post(
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
     try {
+          const errors = validateNews(req.body);
+          if (errors.length > 0) {
+            return res.status(400).json({ errors });
+          }
       let query = "";
       if (req.query.role === "3") {
         query = `
