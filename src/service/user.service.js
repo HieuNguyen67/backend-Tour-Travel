@@ -445,8 +445,8 @@ app.get("/news-categories", authenticateToken, async (req, res) => {
     const categories = await pool.query("SELECT * FROM NewsCategories");
     res.json(categories.rows);
   } catch (error) {
-    console.error("Failed to fetch news categories:", error);
-    res.status(500).json({ message: "Failed to fetch news categories." });
+    console.error("Lỗi khi lấy danh mục tin tức:", error);
+    res.status(500).json({ message: "Lỗi khi lấy danh mục tin tức" });
   }
 });
 
@@ -484,8 +484,8 @@ app.get("/news-detail/:newsId", async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Failed to fetch news:", error);
-    res.status(500).json({ message: "Failed to fetch news" });
+    console.error("Lỗi khi lấy chi tiết tin tức:", error);
+    res.status(500).json({ message: "Lỗi khi lấy chi tiết tin tức" });
   }
 });
 
@@ -525,8 +525,8 @@ app.get("/list-news-travel/:category", async (req, res) => {
 
     res.json(newsWithBase64Images);
   } catch (error) {
-    console.error("Failed to fetch news:", error);
-    res.status(500).json({ message: "Failed to fetch news" });
+    console.error("Lỗi khi lấy chi tiết tin tức:", error);
+    res.status(500).json({ message: "Lỗi khi lấy chi tiết tin tức" });
   }
 });
 
@@ -540,7 +540,7 @@ app.get("/locations", async (req, res) => {
     const result = await pool.query(query, [location_type]);
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching locations:", error);
+    console.error("Lỗi khi lấy danh sách địa điểm:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -570,14 +570,14 @@ app.get("/get-tour/:tourId", async (req, res) => {
     );
 
     if (tourQuery.rows.length === 0) {
-      return res.status(404).json({ error: "Tour not found" });
+      return res.status(404).json({ error: "Không tìm thấy tour" });
     }
 
     const tour = tourQuery.rows[0];
 
     res.status(200).json(tour);
   } catch (error) {
-    console.error("Error fetching tour:", error.message);
+    console.error("Lỗi khi lấy chi tiết tour:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -593,7 +593,7 @@ app.get("/get-all-tour-images/:tourId", async (req, res) => {
     );
 
     if (imageQuery.rows.length === 0) {
-      return res.status(404).json({ error: "Images not found for this tour" });
+      return res.status(404).json({ error: "Không tìm thấy hình ảnh cho tour này" });
     }
 
     const imagesBase64 = [];
@@ -606,7 +606,7 @@ app.get("/get-all-tour-images/:tourId", async (req, res) => {
 
     res.status(200).json(imagesBase64);
   } catch (error) {
-    console.error("Error fetching tour images:", error.message);
+    console.error("Lõi khi lấy hình ảnh tour:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -649,7 +649,7 @@ app.get("/get-ratings-tour/:tour_code", async (req, res) => {
       totalRatings: parseInt(averageRating.rows[0].total_ratings, 10),
     });
   } catch (error) {
-    console.error("Error fetching ratings:", error.message);
+    console.error("Lỗi khi lấy đánh giá tour:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });

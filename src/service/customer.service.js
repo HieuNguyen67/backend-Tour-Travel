@@ -296,7 +296,7 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 
     res.status(201).json(newContact.rows[0]);
   } catch (error) {
-    console.error("Error sending contact:", error.message);
+    console.error("Lỗi khi gửi liên hệ:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -306,7 +306,7 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 app.get("/list-tours-filter", async (req, res) => {
   const { tourcategory_name } = req.query;
   if (!tourcategory_name) {
-    return res.status(400).json({ error: "tourcategory_name is required" });
+    return res.status(400).json({ error: "Cần có danh mục tour" });
   }
 
   let query = `
@@ -368,7 +368,7 @@ app.get("/list-tours-filter", async (req, res) => {
 
     res.json(tours);
   } catch (error) {
-    console.error("Error executing query", error.stack);
+    console.error("Lỗi khi thực hiện truy vấn", error.stack);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -395,9 +395,9 @@ app.post("/report-tour/:tourId/:customerId", async (req, res) => {
     ];
     const result = await pool.query(query, values);
 
-    res.status(200).json({ message: "Report tour successful" });
+    res.status(200).json({ message: "Report tour thành công" });
   } catch (error) {
-    console.error("Error reporting tour:", error.message);
+    console.error("Lỗi khi report tour:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -512,7 +512,7 @@ app.post(
           );
           return res.status(400).json({
             message:
-              "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour",
+              "Số lượng không trùng khớp với số lượng đặt tour. Bạn cần cung cấp ít nhất 1 thông tin của khách hàng",
           });
         }
         var passengersParse = passengers;
@@ -611,13 +611,16 @@ app.post(
         VALUES ($1, $2, $3, $4, $5, $6)
       `;
       for (const passenger of passengersParse) {
+        console.log(passenger.birthdate);
+                console.log(passenger.gender);
+ console.log(passenger.passport_number);
         await pool.query(passengerInsertQuery, [
           orderId,
           passenger.name,
-          passenger.birthdate,
-          passenger.gender,
-          passenger.passport_number,
-          passenger.type,
+          passenger.birthdate === "Invalid date" ? null : passenger.birthdate,
+          passenger.gender === null ? null : passenger.gender,
+          passenger.passport_number === null ? null : passenger.passport_number,
+          passenger.type === null ? null : passenger.type,
         ]);
       }
 

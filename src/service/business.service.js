@@ -211,8 +211,8 @@ app.get(
       const result = await pool.query(query, [accountId]);
       res.json(result.rows);
     } catch (error) {
-      console.error("Failed to fetch contacts:", error);
-      res.status(500).json({ message: "Failed to fetch contacts" });
+      console.error("Lỗi khi lấy contacts:", error);
+      res.status(500).json({ message: "Lỗi khi lấy contacts" });
     }
   }
 );
@@ -231,13 +231,13 @@ app.get(
       const result = await pool.query(query, [contactId]);
 
       if (result.rows.length === 0) {
-        return res.status(404).json({ message: "Contact not found" });
+        return res.status(404).json({ message: "Không tìm thấy Contact" });
       }
 
       res.json(result.rows[0]);
     } catch (error) {
-      console.error("Failed to fetch contact:", error);
-      res.status(500).json({ message: "Failed to fetch contact" });
+      console.error("Lỗi khi lấy thông tin contact:", error);
+      res.status(500).json({ message: "Lỗi khi lấy thông tin contact" });
     }
   }
 );
@@ -259,10 +259,10 @@ app.put(
     `;
       await pool.query(query, [status, contactId]);
 
-      res.status(200).json({ message: "News status updated successfully" });
+      res.status(200).json({ message: "Cập nhật trạng thái contact thành công" });
     } catch (error) {
-      console.error("Failed to update news status:", error);
-      res.status(500).json({ message: "Failed to update news status " });
+      console.error("Lỗi khi cập nhật trạng thái contact:", error);
+      res.status(500).json({ message: "Lỗi khi cập nhật trạng thái contact " });
     }
   }
 );
@@ -341,10 +341,10 @@ app.post(
          return res.status(400).json({ errors });
        }
 
-      if (!req.files || req.files.length === 0) {
+      if (!req.files || req.files.length < 4) {
         return res
           .status(400)
-          .json({ error: "At least one image is required." });
+          .json({ error: "Cần ít nhất 4 file ảnh." });
       }
 
       const newTour = await pool.query(
@@ -396,9 +396,9 @@ app.post(
         );
       }
 
-      res.status(201).json({ message: "Tour and images added successfully!", tour_id });
+      res.status(201).json({ message: "Thêm tour thành công !", tour_id });
     } catch (error) {
-      console.error("Error adding tour: ", error.message);
+      console.error("Lỗi khi thêm tour: ", error.message);
       res.status(500).json({ error: "Server error" });
     }
   }
@@ -412,7 +412,7 @@ app.get("/tourcategories", async (req, res) => {
     const { rows } = await pool.query(queryText);
     res.status(200).json(rows);
   } catch (error) {
-    console.error("Error getting tour categories:", error);
+    console.error("Lỗi khi lấy danh mục tour:", error);
     res.status(500).json({ message: "Lỗi máy chủ" });
   }
 });
@@ -485,7 +485,7 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
 
     res.json(tours);
   } catch (error) {
-    console.error("Error executing query", error.stack);
+    console.error("Lỗi khi thực hiện query", error.stack);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -526,7 +526,7 @@ app.put(
       );
 
       if (existingTour.rows.length === 0) {
-        return res.status(404).json({ error: "Tour not found" });
+        return res.status(404).json({ error: "Không tìm thấy tour" });
       }
 
       
@@ -589,9 +589,9 @@ app.put(
         );
       }
 
-      res.status(200).json({ message: "Tour updated successfully!" });
+      res.status(200).json({ message: "Cập nhật tour thành công!" });
     } catch (error) {
-      console.error("Error updating tour: ", error.message);
+      console.error("Lỗi khi cập nhật tour: ", error.message);
       res.status(500).json({ error: "Server error" });
     }
   }
@@ -613,7 +613,7 @@ app.put(
       );
 
       if (existingTour.rows.length === 0) {
-        return res.status(404).json({ error: "Tour not found" });
+        return res.status(404).json({ error: "Không tìm thấy Tour" });
       }
 
       if (req.files && req.files.length > 0) {
@@ -632,9 +632,9 @@ app.put(
         }
       }
 
-      res.status(200).json({ message: "Tour images updated successfully!" });
+      res.status(200).json({ message: "Cập nhật hình ảnh tour thành công!" });
     } catch (error) {
-      console.error("Error updating tour images: ", error.message);
+      console.error("Lỗi khi cập nhật hình ảnh tour: ", error.message);
       res.status(500).json({ error: "Server error" });
     }
   }
@@ -645,12 +645,6 @@ app.put(
 app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
   const businessId = req.params.business_id;
   const { policytype, description } = req.body;
-
-  if (!policytype || !description) {
-    return res
-      .status(400)
-      .json({ error: "Please provide policytype and description" });
-  }
 
   try {
 
@@ -667,7 +661,7 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
 
     res.status(201).json(newPolicy.rows[0]);
   } catch (error) {
-    console.error("Error adding policy:", error.message);
+    console.error("Lỗi khi thêm chính sách:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -680,7 +674,7 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
 
   if (days_before_departure == null || refund_percentage == null) {
     return res.status(400).json({
-      error: "Both days_before_departure and refund_percentage are required",
+      error: "Cần có ngày trước khởi hành và phần trăm hoàn tiền",
     });
   }
 
@@ -703,7 +697,7 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
     );
     res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error("Error inserting policy cancellation:", error);
+    console.error("Lỗi khi thêm chính sách hoàn tiền:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
 });
@@ -720,7 +714,7 @@ app.get("/list-policies/:business_id", async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching policies:", error.message);
+    console.error("Lỗi khi lấy danh sách chính sách:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -738,7 +732,7 @@ app.get("/list-policies-cancellation/:business_id", async (req, res) => {
 
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching policies:", error.message);
+    console.error("Lỗi khi lấy chính sách huỷ:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -761,8 +755,8 @@ app.delete("/delete-policy/:policyId", authenticateToken, async (req, res) => {
 
     res.status(204).send();
   } catch (error) {
-    console.error("Failed to delete policy:", error);
-    res.status(500).json({ message: "Failed to delete policy" });
+    console.error("Lỗi khi xoá chính sách:", error);
+    res.status(500).json({ message: "Lỗi khi xoá chính sách" });
   }
 });
 
@@ -782,13 +776,13 @@ app.get("/policies/:policy_id", async (req, res) => {
     const policiesResult = await pool.query(query, [policy_id]);
 
     if (policiesResult.rows.length === 0) {
-      return res.status(404).json({ error: "Policy not found" });
+      return res.status(404).json({ error: "Không tìm thấy chính sách" });
     }
 
     const policy = policiesResult.rows[0];
     res.json(policy);
   } catch (error) {
-    console.error("Error fetching policy:", error.message);
+    console.error("Lõi khi lấy chi tiết chính sách:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -820,7 +814,7 @@ app.put("/policies/:policy_id", async (req, res) => {
     }
 
     if (policiesUpdate.rows.length === 0) {
-      return res.status(404).json({ error: "Policy not found" });
+      return res.status(404).json({ error: "Không tìm thấy chính sách" });
     }
 
     const updatedData = policiesUpdate.rows[0];
@@ -828,7 +822,7 @@ app.put("/policies/:policy_id", async (req, res) => {
 
     res.json({ tableName, updatedData });
   } catch (error) {
-    console.error("Error updating policy:", error.message);
+    console.error("Lỗi khi cập nhật chính sách:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -868,11 +862,11 @@ app.get("/tours-rating/:businessId", async (req, res) => {
     if (result.rows.length === 0) {
       return res
         .status(404)
-        .json({ message: "No tours found for this account." });
+        .json({ message: "Không tìm thấy tour theo doanh nghiệp." });
     }
     res.json(tours);
   } catch (error) {
-    console.error("Error fetching tours:", error);
+    console.error("Lỗi khi lấy list tour:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -972,11 +966,11 @@ app.put(
       await pool.query(query, [status, orderId]);
    
       res.status(200).json({
-        message: "Order status updated successfully",
+        message: "Cập nhật trạng thái đơn hàng thành công",
       });
     } catch (error) {
-      console.error("Failed to update Order status:", error);
-      res.status(500).json({ message: "Failed to update Order status" });
+      console.error("Lỗi khi cập nhật trạng thái đơn hàng:", error);
+      res.status(500).json({ message: "Lỗi khi cập nhật trạng thái đơn hàng" });
     }
   }
 );
@@ -1692,11 +1686,11 @@ app.put(
       await pool.query(query, [tourCode, orderId]);
 
       res.status(200).json({
-        message: "Order tour updated successfully",
+        message: "Chuyển đơn hàng thành công!",
       });
     } catch (error) {
-      console.error("Failed to update Order tour:", error);
-      res.status(500).json({ message: "Failed to update Order tour" });
+      console.error("Lỗi khi chuyển đơn hàng:", error);
+      res.status(500).json({ message: "Lỗi khi chuyển đơn hàng" });
     }
   }
 );

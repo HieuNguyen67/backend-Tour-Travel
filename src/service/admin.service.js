@@ -103,14 +103,12 @@ function validateRegister(data) {
       errors.push("Ngày sinh không hợp lệ.");
     }
 
-  // Validate phone_number
   if (!data.phone_number) {
     errors.push("Số điện thoại là bắt buộc.");
   } else if (!/^\d{10}$/.test(data.phone_number)) {
     errors.push("Số điện thoại phải có 10 chữ số.");
   }
 
-  // Validate address
   if (!data.address) {
     errors.push("Địa chỉ là bắt buộc.");
   } else if (typeof data.address !== "string" || data.address.trim() === "") {
@@ -145,9 +143,7 @@ app.post("/register-admin/:adminId", authenticateToken, async (req, res) => {
       email,
     ]);
     if (existingResult.rows.length > 0) {
-      return res
-        .status(400)
-        .json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
+      return res.status(400).json({ message: "Tên đăng nhập hoặc email đã tồn tại." });
     }
 
     const checkRoleExistQuery =
@@ -328,7 +324,7 @@ app.get("/get-admins", authenticateToken, async (req, res) => {
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error("Error fetching admins:", error);
+    console.error("Lỗi khi lấy danh sách admin:", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });
@@ -437,15 +433,17 @@ app.post(
       if (imageInserted) {
         res
           .status(201)
-          .json({ message: "News posted successfully", news_id: newsId });
+          .json({ message: "Thêm tin tức thành công", news_id: newsId });
       } else {
-        res.status(400).json({ message: "Please upload an image file" });
+        res
+          .status(400)
+          .json({ message: "Vui lòng tải lên một file hình ảnh" });
       }
     } catch (error) {
-      console.error("Error posting news:", error);
+      console.error("Lỗi đăng tin tức:", error);
       res
         .status(500)
-        .json({ message: "Failed to post news. Please try again later." });
+        .json({ message: "Không thể đăng tin tức. Vui lòng thử lại sau." });
     }
   }
 );
@@ -463,14 +461,14 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
         SELECT n.news_id, n.title, n.content, nc.name as category_name, a.name as profile_name, n.created_at, n.status, n.note, n.image
         FROM news n
         LEFT JOIN newscategories nc ON n.newscategory_id = nc.newscategory_id
-               LEFT JOIN business b ON n.posted_by_type = 'business' AND n.posted_by_id_business = b.business_id
-                LEFT JOIN accounts a ON b.account_id = a.account_id
+        LEFT JOIN business b ON n.posted_by_type = 'business' AND n.posted_by_id_business = b.business_id
+        LEFT JOIN accounts a ON b.account_id = a.account_id
         WHERE n.posted_by_id_business = $1 and n.posted_by_type= 'business'
       `;
       params.push(accountId);
     } else {
       query = `
-              SELECT 
+          SELECT 
           n.news_id, 
           n.title, 
           n.content, 
@@ -508,8 +506,8 @@ app.get("/list-news/:account_id?", authenticateToken, async (req, res) => {
 
     res.json(newsWithBase64Images);
   } catch (error) {
-    console.error("Failed to fetch news:", error);
-    res.status(500).json({ message: "Failed to fetch news" });
+    console.error("Lỗi lấy danh sách news:", error);
+    res.status(500).json({ message: "Lỗi lấy danh sách news" });
   }
 });
 
@@ -544,8 +542,8 @@ app.delete(
       }
       res.status(204).send();
     } catch (error) {
-      console.error("Failed to delete news:", error);
-      res.status(500).json({ message: "Failed to delete news" });
+      console.error("Lỗi khi xoá tin tức:", error);
+      res.status(500).json({ message: "Lỗi khi xoá tin tức" });
     }
   }
 );
@@ -562,8 +560,8 @@ app.get("/select-status-note/:newsId", authenticateToken, async (req, res) => {
     const details = result.rows[0];
     res.json(details);
   } catch (error) {
-    console.error("Failed to fetch news details:", error);
-    res.status(500).json({ message: "Failed to fetch news details" });
+    console.error("Lỗi khi lấy thông tin tin tức:", error);
+    res.status(500).json({ message: "Lỗi khi lấy thông tin tin tức" });
   }
 });
 
@@ -602,12 +600,14 @@ app.put(
 
       res
         .status(200)
-        .json({ message: "News status and note updated successfully" });
+        .json({
+          message: "Trạng thái tin tức và ghi chú được cập nhật thành công",
+        });
     } catch (error) {
-      console.error("Failed to update news status and note:", error);
+      console.error("Lỗi khi cập nhật trạng thái và ghi chú tin tức:", error);
       res
         .status(500)
-        .json({ message: "Failed to update news status and note" });
+        .json({ message: "Lỗi khi cập nhật trạng thái và ghi chú tin tức" });
     }
   }
 );
@@ -621,10 +621,10 @@ app.put("/update-news/:newsId", authenticateToken, async (req, res) => {
     const query = "UPDATE news SET title = $1, content = $2 WHERE news_id = $3";
     await pool.query(query, [title, content, newsId]);
 
-    res.status(200).json({ message: "News updated successfully" });
+    res.status(200).json({ message: "Cập nhật tin tức thành công" });
   } catch (error) {
-    console.error("Failed to update news:", error);
-    res.status(500).json({ message: "Failed to update news" });
+    console.error("Lỗi khi cập nhật tin tức:", error);
+    res.status(500).json({ message: "Lỗi khi cập nhật tin tức" });
   }
 });
 
@@ -636,8 +636,8 @@ app.get("/get-contacts", authenticateToken, async (req, res) => {
     const result = await pool.query(query);
     res.json(result.rows);
   } catch (error) {
-    console.error("Failed to fetch contacts:", error);
-    res.status(500).json({ message: "Failed to fetch contacts" });
+    console.error("Lỗi khi lấy liên hệ:", error);
+    res.status(500).json({ message: "Lỗi khi lấy liên hệ" });
   }
 });
 
@@ -651,13 +651,13 @@ app.get("/contacts-detail/:contactId", authenticateToken, async (req, res) => {
     const result = await pool.query(query, [contactId]);
 
     if (result.rows.length === 0) {
-      return res.status(404).json({ message: "Contact not found" });
+      return res.status(404).json({ message: "Không tìm thấy liên hệ" });
     }
 
     res.json(result.rows[0]);
   } catch (error) {
-    console.error("Failed to fetch contact:", error);
-    res.status(500).json({ message: "Failed to fetch contact" });
+    console.error("Lỗi khi lấy thông tin liên hệ:", error);
+    res.status(500).json({ message: "Lỗi khi lấy thông tin liên hệ" });
   }
 });
 
@@ -694,10 +694,10 @@ app.put(
         objectType,
       ]);
 
-      res.status(200).json({ message: "Contact status updated successfully" });
+      res.status(200).json({ message: "Cập nhật trạng thái liên hệ thành công" });
     } catch (error) {
-      console.error("Failed to update contact status:", error);
-      res.status(500).json({ message: "Failed to update contact status" });
+      console.error("Lỗi khi cập nhật trạng thái liên hệ:", error);
+      res.status(500).json({ message: "Lỗi khi cập nhật trạng thái liên hệ" });
     }
   }
 );
@@ -716,9 +716,9 @@ const updateTourStatuses = async () => {
 
     await pool.query(updateQuery, [currentDate]);
 
-    console.log("Tour statuses updated successfully");
+    console.log("Cập nhật trạng thái tour thành công");
   } catch (error) {
-    console.error("Error updating tour statuses:", error.message);
+    console.error("Lỗi khi cập nhật trạng thái tour:", error.message);
   }
 };
 
@@ -738,22 +738,22 @@ app.get("/report-list", async (req, res) => {
         tour_reports tr
       JOIN 
         tours t ON tr.tour_id = t.tour_id
-           LEFT JOIN
+      LEFT JOIN
       customers c ON tr.customer_id = c.customer_id
-    LEFT JOIN 
+      LEFT JOIN 
       accounts a ON c.account_id = a.account_id
       ORDER BY 
-                tr.reportdate DESC
+      tr.reportdate DESC
       
     `);
 
     if (reportQuery.rows.length === 0) {
-      return res.status(404).json({ error: "No reports found" });
+      return res.status(404).json({ error: "Không tìm thấy report" });
     }
 
     res.status(200).json(reportQuery.rows);
   } catch (error) {
-    console.error("Error fetching reports:", error.message);
+    console.error("Lỗi khi lấy report:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -792,13 +792,13 @@ app.get("/report-details/:reportId", async (req, res) => {
     );
 
     if (reportQuery.rows.length === 0) {
-      return res.status(404).json({ error: "Report not found" });
+      return res.status(404).json({ error: "Không tìm thấy report" });
     }
 
     const report = reportQuery.rows[0];
     res.status(200).json(report);
   } catch (error) {
-    console.error("Error fetching report details:", error.message);
+    console.error("Lỗi khi lấy chi tiết report:", error.message);
     res.status(500).json({ error: "Server error" });
   }
 });
@@ -834,10 +834,10 @@ app.put(
         objectType,
       ]);
 
-      res.status(200).json({ message: "Report status updated successfully" });
+      res.status(200).json({ message: "Cập nhật trạng thái report thành công" });
     } catch (error) {
-      console.error("Failed to update Report status :", error);
-      res.status(500).json({ message: "Failed to update Report status " });
+      console.error("Lỗi khi cập nhật trạng thái report :", error);
+      res.status(500).json({ message: "Lỗi khi cập nhật trạng thái report" });
     }
   }
 );
@@ -851,10 +851,11 @@ const getPendingCount = async (table, status, res) => {
     const count = result.rows[0].count;
     res.json({ count });
   } catch (error) {
-    console.error(`Error executing query for table ${table}:`, error);
+    console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
+
 app.get("/pending-count-status-contact", (req, res) => {
   getPendingCount("contacts", "Pending", res);
 });
@@ -878,7 +879,7 @@ const getPendingCountBusiness = async (table, status, business_id, res) => {
     const count = result.rows[0].count;
     res.json({ count });
   } catch (error) {
-    console.error(`Error executing query for table ${table}:`, error);
+    console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -908,7 +909,7 @@ const CountBusiness = async (table, business_id, res) => {
     const count = result.rows[0].count;
     res.json({ count });
   } catch (error) {
-    console.error(`Error executing query for table ${table}:`, error);
+    console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -932,7 +933,7 @@ const CountNews = async (table, business_id, res) => {
     const count = result.rows[0].count;
     res.json({ count });
   } catch (error) {
-    console.error(`Error executing query for table ${table}:`, error);
+    console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -941,6 +942,7 @@ app.get("/count-news-business/:business_id", (req, res) => {
   const business_id = req.params.business_id;
   CountNews("news", business_id, res);
 });
+
 const CountAdmin = async (table, res) => {
   try {
     const result = await pool.query(
@@ -949,7 +951,7 @@ const CountAdmin = async (table, res) => {
     const count = result.rows[0].count;
     res.json({ count });
   } catch (error) {
-    console.error(`Error executing query for table ${table}:`, error);
+    console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
     res.status(500).json({ message: "Internal Server Error" });
   }};
 
@@ -962,13 +964,14 @@ const CountAdmin = async (table, res) => {
     app.get("/count-admin", (req, res) => {
       CountAdmin("admin", res);
     });
+
     const CountAdminCondition = async (table, status, res) => {
       try {
         const result = await pool.query(`SELECT COUNT(*) FROM ${table} WHERE status = $1`, [status]);
         const count = result.rows[0].count;
         res.json({ count });
       } catch (error) {
-        console.error(`Error executing query for table ${table}:`, error);
+        console.error(`Lỗi thực hiện truy vấn cho bảng ${table}:`, error);
         res.status(500).json({ message: "Internal Server Error" });
       }
     };
@@ -1046,8 +1049,10 @@ app.get("/list-admin-actions", async (req, res) => {
 
     res.status(200).json(result.rows);
   } catch (error) {
-    console.error("Failed to retrieve admin actions:", error);
-    res.status(500).json({ message: "Failed to retrieve admin actions" });
+    console.error("Không thể truy xuất hành động của admin:", error);
+    res
+      .status(500)
+      .json({ message: "Không thể truy xuất hành động của admin" });
   }
 });
 
@@ -1111,10 +1116,10 @@ cron.schedule("0 * * * *", async () => {
   try {
     await pool.query(cancelOrderQuery, [past24Hours]);
     console.log(
-      `Orders updated to 'Cancel' status if not paid within 24 hours as of ${currentDateTime}`
+      `Đơn hàng được cập nhật trạng thái 'Hủy' nếu không được thanh toán trong vòng 24 giờ kể từ ${currentDateTime}`
     );
   } catch (error) {
-    console.error("Failed to cancel unpaid orders:", error);
+    console.error("Không thể hủy các đơn hàng chưa thanh toán:", error);
   }
 });
 
@@ -1276,12 +1281,14 @@ app.put(
       }
 
       res.status(200).json({
-        message: "Order status updated successfully",
+        message: "Cập nhật trạng thái thanh toán order thành công",
         order: updatedOrderDetailResult.rows[0],
       });
     } catch (error) {
-      console.error("Failed to update Order status:", error);
-      res.status(500).json({ message: "Failed to update Order status" });
+      console.error("Lỗi khi cập nhật trạng thái thanh toán Order:", error);
+      res
+        .status(500)
+        .json({ message: "Lỗi khi cập nhật trạng thái thanh toán Order" });
     }
   }
 );
@@ -1309,17 +1316,17 @@ const updateOrders = async () => {
         AND status = 'Confirm' AND status_payment = 'Paid'
       `;
       await pool.query(updateQuery, [tourIds]);
-      console.log("Orders updated successfully");
+      console.log("Cập nhật trạng thái hoàn thành cho order thành công");
     } else {
-      console.log("No tours to update");
+      console.log("Không tìm thấy tour cập nhật");
     }
   } catch (error) {
-    console.error("Error updating orders:", error);
+    console.error("Lỗi khi cập nhật trạng thái đơn hàng:", error);
   }
 };
 
 cron.schedule("0 * * * *", () => {
-  console.log("Running cron job to update complete orders");
+  console.log("Cập nhật đơn hàng hoàn thành tự động");
   updateOrders();
 });
 
@@ -1435,6 +1442,7 @@ app.put(
       WHERE refund_id = $3
     `;
       await pool.query(query, [status, currentDateTime, refundId]);
+      
       if (status === "Refunded") {
         const getRequestIdQuery = `
         SELECT request_id, refund_amount FROM refunds WHERE refund_id = $1
@@ -1475,7 +1483,7 @@ app.put(
 
       res.status(200).json({ message: "Cập nhật trạng thái thành công!" });
     } catch (error) {
-      console.error("Failed to update refund status:", error);
+      console.error("Lỗi khi cập nhật trạng thái hoàn tiền:", error);
       res.status(500).json({ message: "Cập nhật trạng thái thất bại!" });
     }
   }
@@ -1546,13 +1554,16 @@ const updateOrderStatus = async () => {
       ]);
     }
   } catch (error) {
-    console.error("Failed to update order status and create refunds:", error);
+    console.error(
+      "Không thể cập nhật trạng thái đơn hàng và hoàn tiền:",
+      error
+    );
   }
 };
 
 cron.schedule("0 * * * *", () => {
   console.log(
-    "Running cron job to update orders pending to cancle within 24 hours"
+    "Tự động: Cập nhật huỷ đơn hàng và hoàn tiền cho đơn hàng đã thanh toán chưa được xác nhận trong 48 tiếng"
   );
   updateOrderStatus();
 });
@@ -1650,13 +1661,31 @@ app.put(
   authenticateToken,
   async (req, res) => {
     const { businessId } = req.params;
-    const { month, year } = req.query;
+    const { month, year } = req.body;
 
     if (!month || !year) {
       return res.status(400).json({
         message: "Vui lòng cung cấp cả tháng và năm.",
       });
     }
+
+      const currentDate = new Date();
+      const currentMonth = currentDate.getMonth() + 1;
+      const currentYear = currentDate.getFullYear();
+
+      const providedMonth = parseInt(month);
+      const providedYear = parseInt(year);
+
+      
+      if (
+        providedYear > currentYear ||
+        (providedYear === currentYear && providedMonth >= currentMonth)
+      ) {
+        return res.status(400).json({
+          message:
+            "Chỉ có thể cập nhật trạng thái thanh toán cho các tháng trước.",
+        });
+      }
 
     try {
       const startDate = `${year}-${String(month).padStart(2, "0")}-01`;
@@ -1733,9 +1762,9 @@ const updatePoints = async () => {
       await pool.query(updateOrderQuery, [order_id]);
     }
 
-    console.log(`Updated points for ${orders.length} orders`);
+    console.log(`Cập nhật xu cho ${orders.length} orders`);
   } catch (error) {
-    console.error("Error updating points:", error);
+    console.error("Lỗi khi cập nhật xu:", error);
   }
 };
 
