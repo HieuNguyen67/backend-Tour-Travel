@@ -611,9 +611,6 @@ app.post(
         VALUES ($1, $2, $3, $4, $5, $6)
       `;
       for (const passenger of passengersParse) {
-        console.log(passenger.birthdate);
-                console.log(passenger.gender);
- console.log(passenger.passport_number);
         await pool.query(passengerInsertQuery, [
           orderId,
           passenger.name,
@@ -930,10 +927,10 @@ app.post(
         await pool.query(passengerInsertQuery, [
           order_Id,
           passenger.name,
-          passenger.birthdate,
-          passenger.gender,
-          passenger.passport_number,
-          passenger.type,
+          passenger.birthdate === "Invalid date" ? null : passenger.birthdate,
+          passenger.gender === null ? null : passenger.gender,
+          passenger.passport_number === null ? null : passenger.passport_number,
+          passenger.type === null ? null : passenger.type,
         ]);
       }
 

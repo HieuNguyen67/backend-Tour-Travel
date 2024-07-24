@@ -457,7 +457,6 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
       destinationlocation dsl ON t.tour_id = dsl.tour_id
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
-
     WHERE
       t.business_id = $1  AND a.status = 'Active'
   `;
@@ -1055,8 +1054,7 @@ app.post(
 
         const policy = policyResult.rows[0];
 
-        const refundAmount =
-          (order.total_price * policy.refund_percentage) / 100;
+        const refundAmount = (order.total_price * policy.refund_percentage) / 100;
 
         const updateCancellationRequestQuery = `
           UPDATE cancellation_request
