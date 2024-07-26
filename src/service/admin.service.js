@@ -64,8 +64,8 @@ function validateRegister(data) {
 
   if (!data.password) {
     errors.push("Mật khẩu là bắt buộc.");
-  } else if (typeof data.password !== "string" || data.password.length < 8) {
-    errors.push("Mật khẩu phải có ít nhất 8 ký tự.");
+  } else if (typeof data.password !== "string" || data.password.length < 6) {
+    errors.push("Mật khẩu phải có ít nhất 6 ký tự.");
   } else if (/\s/.test(data.password)) {
     errors.push("Mật khẩu không được chứa dấu cách.");
   }
@@ -330,40 +330,35 @@ app.get("/get-admins", authenticateToken, async (req, res) => {
 });
 
 //-----------------------------------------------
-function validateNews(data) {
+function validateNews({ title, content, newscategory_id }) {
   const errors = [];
+ const trimmedTitle = title.trim();
 
-  if (
-    !data.title ||
-    typeof data.title !== "string" ||
-    data.title.trim() === ""
-  ) {
-    errors.push("Tiêu đề không được để trống và phải là chuỗi văn bản.");
-  } 
-  // else if (data.title.length > 100) {
+ if (!trimmedTitle || typeof trimmedTitle !== "string") {
+   errors.push("Tiêu đề là bắt buộc và phải là một chuỗi không rỗng.");
+ }
+ 
+  // else if ( title.length > 100) {
   //   errors.push("Tiêu đề không được vượt quá 100 ký tự.");
-  // } 
-  else if (/[^a-zA-Z0-9\s\p{P}]/u.test(data.title)) {
+  // }
+  else if (/[^a-zA-Z0-9À-ỹà-ỹ\s\p{P}]/u.test(title)) {
     errors.push(
       "Tiêu đề chỉ được chứa chữ cái, số, khoảng trắng và ký tự đặc biệt hợp lệ."
     );
   }
 
   if (
-    !data.content ||
-    typeof data.content !== "string" ||
-    data.content.trim() === ""
+    !content ||
+    typeof  content !== "string" ||
+     content.trim() === ""
   ) {
     errors.push("Nội dung không được để trống và phải là chuỗi văn bản.");
-  } 
-  // else if (data.content.length > 2000) {
+  }
+  // else if ( content.length > 2000) {
   //   errors.push("Nội dung không được vượt quá 2000 ký tự.");
   // }
 
   
-   if (req.file && !["image/jpeg", "image/png"].includes(req.file.mimetype)) {
-     errors.push("Ảnh phải là định dạng JPEG hoặc PNG.");
-   }
 
   return errors;
 }
@@ -375,12 +370,13 @@ app.post(
   async (req, res) => {
     const accountId = req.params.account_id;
     const adminId = req.params.adminId;
-    const { title, content, newscategory_id } = req.body;
+    const { title, content, newscategory_id } = req.body
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
     try {
-          const errors = validateNews(req.body);
+
+          const errors = validateNews({ title, content, newscategory_id });
           if (errors.length > 0) {
             return res.status(400).json({ errors });
           }
@@ -398,8 +394,8 @@ app.post(
       }
 
       const newsInsertValues = [
-        title,
-        content,
+        title.trim(),
+        content.trim(),
         newscategory_id,
         accountId,
         currentDateTime,

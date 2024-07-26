@@ -299,11 +299,14 @@ function validateTour(data) {
   if (data.adult_price <= data.child_price || data.child_price <= data.infant_price) {
     errors.push("Giá cho người lớn phải lớn hơn giá cho trẻ em, và giá cho trẻ em phải lớn hơn giá cho trẻ sơ sinh.");
   }
-  if (data.description && (data.description.length < 10 || !/^[\w\s.,!?-]+$/.test(data.description))) {
-    errors.push("Thông tin về lịch trình phải dài ít nhất 10 ký tự và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu câu cơ bản).");
-  }
-  if (!data.name || data.name.length > 100 || !/^[\w\s-]+$/.test(data.name)) {
-    errors.push("Tên tour không được để trống, không được dài quá 100 ký tự, và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu gạch ngang).");
+  // if (data.description && (data.description.length < 10 || !/^[\w\s.,!?-]+$/.test(data.description))) {
+  //   errors.push("Thông tin về lịch trình phải dài ít nhất 10 ký tự và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu câu cơ bản).");
+  // }
+  // || !/^[\w\sÀ-ỹà-ỹ-]+$/.test(data.name)
+  if (!data.name ) {
+    errors.push(
+      "Tên tour không được để trống, và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu gạch ngang)."
+    );
   }
 
   return errors;

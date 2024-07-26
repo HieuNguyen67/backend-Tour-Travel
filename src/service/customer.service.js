@@ -8,7 +8,7 @@ const moment = require("moment");
 const axios = require("axios");
 const CryptoJS = require("crypto-js");
 const crypto = require("crypto");
-const { v4: uuidv4 } = require("uuid"); 
+const { v4: uuidv4 } = require("uuid");
 const bodyParser = require("body-parser");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { generateRandomCode } = require("../middlewares/randomcode.js");
@@ -62,7 +62,7 @@ function validateRegister(data) {
     errors.push("Tên đăng nhập phải có ít nhất 3 ký tự.");
   } else if (/\s/.test(data.username)) {
     errors.push("Username không được chứa dấu cách.");
-  } 
+  }
 
   if (!data.password) {
     errors.push("Mật khẩu là bắt buộc.");
@@ -70,7 +70,7 @@ function validateRegister(data) {
     errors.push("Mật khẩu phải có ít nhất 8 ký tự.");
   } else if (/\s/.test(data.password)) {
     errors.push("Mật khẩu không được chứa dấu cách.");
-  } 
+  }
   // else if (!/[A-Z]/.test(data.password)) {
   //   errors.push("Mật khẩu phải chứa ít nhất một chữ cái viết hoa.");
   // } else if (!/[a-z]/.test(data.password)) {
@@ -132,10 +132,10 @@ app.post("/register", async (req, res) => {
   } = req.body;
 
   try {
-     const errors = validateRegister(req.body);
-     if (errors.length > 0) {
-       return res.status(400).json({ errors });
-     }
+    const errors = validateRegister(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ errors });
+    }
 
     const checkExistingQuery =
       "SELECT * FROM accounts WHERE username = $1 OR email = $2";
@@ -224,10 +224,9 @@ function validateContact(data) {
     errors.push("Email không hợp lệ.");
   }
 
- 
- if (data.phonenumber && !/^\d{10}$/.test(data.phonenumber)) {
-   errors.push("Số điện thoại phải có 10 chữ số.");
- }
+  if (data.phonenumber && !/^\d{10}$/.test(data.phonenumber)) {
+    errors.push("Số điện thoại phải có 10 chữ số.");
+  }
   if (!data.message || data.message.length < 10 || data.message.length > 500) {
     errors.push("Tin nhắn phải từ 10 đến 500 ký tự.");
   }
@@ -277,10 +276,10 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
     .tz("Asia/Ho_Chi_Minh")
     .format("YYYY-MM-DD HH:mm:ss");
   try {
-     const errors = validateContact(req.body);
-     if (errors.length > 0) {
-       return res.status(400).json({ errors });
-     }
+    const errors = validateContact(req.body);
+    if (errors.length > 0) {
+      return res.status(400).json({ errors });
+    }
     const newContact = await pool.query(
       "INSERT INTO contacts_business (business_id, tour_id, fullname, email, phonenumber, message, status,senttime) VALUES ($1, $2, $3, $4, $5, $6, 'Pending', $7) RETURNING *",
       [
@@ -439,7 +438,6 @@ app.get("/coupons/:customerId", async (req, res) => {
 
 //-----------------------------------------------
 
-
 app.post(
   "/book-tour/:tourId/:customerId/:shareToken?",
   authenticateToken,
@@ -493,7 +491,6 @@ app.post(
             const birthdate = moment(row.getCell(2).value, "DD/MM/YYYY").format(
               "YYYY-MM-DD"
             );
-
             const passenger = {
               name: row.getCell(1).value,
               birthdate: birthdate,
@@ -505,11 +502,6 @@ app.post(
           }
         });
         if (passengers.length !== total_quantity) {
-          console.error(
-            "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:",
-            passengers.length,
-            total_quantity
-          );
           return res.status(400).json({
             message:
               "Số lượng không trùng khớp với số lượng đặt tour. Bạn cần cung cấp ít nhất 1 thông tin của khách hàng",
@@ -521,11 +513,9 @@ app.post(
         var passengersParse = JSON.parse(passengers);
       }
 
-
       let validShareToken = null;
 
       if (shareToken) {
-
         const checkshareTokenQuery = `
           SELECT * FROM shared_links 
           WHERE share_token = $1 
@@ -536,35 +526,34 @@ app.post(
           [shareToken, customerId]
         );
 
-          if (checkCustomerShareTokenResult.rows.length === 0) {
-              const shareTokenQuery = `
+        if (checkCustomerShareTokenResult.rows.length === 0) {
+          const shareTokenQuery = `
           SELECT * FROM shared_links 
           WHERE share_token = $1 
           AND tour_id = $2
         `;
-              const shareTokenResult = await pool.query(shareTokenQuery, [
-                shareToken,
-                tourId,
-              ]);
+          const shareTokenResult = await pool.query(shareTokenQuery, [
+            shareToken,
+            tourId,
+          ]);
 
-              if (shareTokenResult.rows.length > 0) {
-                const checkOrderQuery = `
+          if (shareTokenResult.rows.length > 0) {
+            const checkOrderQuery = `
           SELECT * FROM orders 
           WHERE customer_id = $1 
           AND share_token = $2
         `;
-                const checkOrderParams = [customerId, shareToken];
-                const checkOrderResult = await pool.query(
-                  checkOrderQuery,
-                  checkOrderParams
-                );
+            const checkOrderParams = [customerId, shareToken];
+            const checkOrderResult = await pool.query(
+              checkOrderQuery,
+              checkOrderParams
+            );
 
-                if (checkOrderResult.rows.length === 0) {
-                  validShareToken = shareToken;
-                }
-              }
+            if (checkOrderResult.rows.length === 0) {
+              validShareToken = shareToken;
+            }
           }
-        
+        }
       }
 
       const orderQuery = `
@@ -602,7 +591,7 @@ app.post(
         customerId,
         tour.business_id,
         code_order,
-        validShareToken
+        validShareToken,
       ]);
       const orderId = orderResult.rows[0].order_id;
 
@@ -643,7 +632,6 @@ app.post(
     }
   }
 );
-
 
 async function getOrderDetails(orderId) {
   const orderDetailQuery = `
@@ -765,7 +753,7 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   ipnUrl:
-    "https://6ab2-113-163-103-30.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://a217-112-197-14-130.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -913,7 +901,7 @@ app.post(
         customerId,
         tour.business_id,
         code_order,
-        validShareToken
+        validShareToken,
       ]);
 
       const order = orderResult.rows[0];
@@ -1554,7 +1542,6 @@ app.get("/download-excel-template", async (req, res) => {
   res.end();
 });
 
-
 // -----------------------------------------------
 
 app.post("/share-tour/:tourId/:customerId", async (req, res) => {
@@ -1624,11 +1611,8 @@ app.get("/shared-tour/:shareToken", async (req, res) => {
     const { rows } = await pool.query(getShareLinkQuery, [shareToken]);
 
     if (rows.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "Link chia sẻ không hợp lệ ." });
+      return res.status(404).json({ message: "Link chia sẻ không hợp lệ ." });
     }
-
 
     res.status(200).json({
       message: "Link chia sẻ hợp lệ.",
