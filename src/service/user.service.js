@@ -7,8 +7,14 @@ const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
 const bodyParser = require("body-parser");
 const { authenticateToken } = require("../middlewares/authen.js");
+const { OAuth2Client } = require("google-auth-library");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+const { generateRandomCode } = require("../middlewares/randomcode.js");
+const dotenv = require("dotenv");
+dotenv.config();
+const client = new OAuth2Client(process.env.CLIENT_ID);
+
 
 app.use(bodyParser.json());
 
@@ -121,6 +127,68 @@ app.post("/login", async (req, res) => {
     });
   } catch (error) {
     console.error("Đăng nhập không thành công:", error);
+    res
+      .status(500)
+      .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });
+  }
+});
+
+//-----------------------------------------------
+
+app.post("/auth/google", async (req, res) => {
+  const { tokenId } = req.body;
+
+  try {
+    const ticket = await client.verifyIdToken({
+      idToken: tokenId,
+      audience: process.env.CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    const { sub, email, name, picture } = payload;
+
+    const query = "SELECT * FROM accounts WHERE google_id = $1 OR email = $2";
+    const result = await pool.query(query, [sub, email]);
+    let account = result.rows[0];
+
+    if (!account) {
+      const insertQuery = `
+        INSERT INTO accounts (username, email, name, google_id, status, role_id, confirmation_code, use_confirmation_code)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        RETURNING *`;
+      const confirmationCode = generateRandomCode(5); 
+      const insertResult = await pool.query(insertQuery, [
+        email, 
+        email,
+        name,
+        sub,
+        "Active",
+        1,
+        confirmationCode,
+        "used",
+      ]);
+      account = insertResult.rows[0];
+
+      const customerQuery = "INSERT INTO customers (account_id) VALUES ($1)";
+      await pool.query(customerQuery, [account.account_id]);
+    }
+
+    const token = jwt.sign(
+      { account_id: account.account_id, username: account.username },
+      process.env.SECRET_KEY,
+      // { expiresIn: "24h" }
+    );
+
+    res.json({
+      token,
+      role: account.role_id,
+      username: account.username,
+      account_id: account.account_id,
+      business_id: account.business_id,
+      customer_id: account.customer_id,
+      admin_id: account.admin_id,
+    });
+  } catch (error) {
+    console.error("Đăng nhập bằng Google không thành công:", error);
     res
       .status(500)
       .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });

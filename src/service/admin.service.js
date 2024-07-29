@@ -1742,7 +1742,7 @@ const updatePoints = async () => {
       `;
       await pool.query(addPointsQuery, [
         shared_by_customer_id,
-        5000, 
+        2000, 
         `Chia sẻ tour thành công !`,
         currentDateTime,
         expiresAt,

@@ -937,7 +937,6 @@ app.get(
       }
 
       const ordersResult = await pool.query(ordersQuery, params);
-
       if (ordersResult.rows.length === 0) {
         return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
       }
@@ -1052,7 +1051,7 @@ app.post(
         if (policyResult.rows.length === 0) {
           return res
             .status(404)
-            .json({ message: "Chính sách hủy không tồn tại" });
+            .json({ message: "Số ngày huỷ của KH không có trong chính sách của bạn. Vui lòng cập nhật !" });
         }
 
         const policy = policyResult.rows[0];

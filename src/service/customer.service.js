@@ -324,12 +324,11 @@ app.get("/list-tours-filter", async (req, res) => {
       t.vehicle,
       t.hotel,
       dl.location_departure_id,
-       array_agg(dsl.location_destination_id) AS destination_locations,
+      array_agg(dsl.location_destination_id) AS destination_locations,
       ldep.location_name as departure_location_name,
       array_agg(ldes.location_name) as destination_location_name,
       tc.name AS tourcategory_name,
       (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image
-     
     FROM
       tours t
     LEFT JOIN
@@ -338,7 +337,7 @@ app.get("/list-tours-filter", async (req, res) => {
       locations ldep ON dl.location_departure_id = ldep.location_id
     LEFT JOIN
       destinationlocation dsl ON t.tour_id = dsl.tour_id
-     LEFT JOIN
+    LEFT JOIN
       locations ldes ON dsl.location_destination_id = ldes.location_id
     LEFT JOIN
       tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
@@ -347,15 +346,14 @@ app.get("/list-tours-filter", async (req, res) => {
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
     WHERE
-      t.status = 'Active' AND tc.name = $1 AND a.status = 'Active'
+      t.status = 'Active' AND tc.name = $1 AND a.status = 'Active' AND t.quantity > 0
+    GROUP BY
+      t.tour_id, departure_location_name, dl.location_departure_id, tc.name
+    ORDER BY
+      t.start_date ASC
   `;
 
   const params = [tourcategory_name];
-  query += `
-    GROUP BY
-      t.tour_id, departure_location_name, dl.location_departure_id, tc.name
-    ORDER BY  t.start_date ASC
-  `;
 
   try {
     const result = await pool.query(query, params);
@@ -371,6 +369,7 @@ app.get("/list-tours-filter", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 //-----------------------------------------------
 
@@ -753,7 +752,7 @@ const momoConfig = {
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
   ipnUrl:
-    "https://a217-112-197-14-130.ngrok-free.app/v1/api/customer/momo/webhook",
+    "https://ee26-171-253-128-178.ngrok-free.app/v1/api/customer/momo/webhook",
 };
 
 app.post(
@@ -1280,6 +1279,7 @@ app.get(
     }
   }
 );
+
 app.post(
   "/rate-tour/:customerId/:tourId/:code_order",
   authenticateToken,
@@ -1303,6 +1303,7 @@ app.post(
         review,
         currentDateTime,
       ]);
+
       const updateOrderQuery = `
         UPDATE orders
         SET status_rating = 'Rated'
@@ -1311,8 +1312,35 @@ app.post(
 
       await pool.query(updateOrderQuery, [code_order]);
 
+      const businessQuery = `
+        SELECT business_id
+        FROM tours
+        WHERE tour_id = $1
+      `;
+
+      const businessResult = await pool.query(businessQuery, [tourId]);
+      const businessId = businessResult.rows[0].business_id;
+
+      const couponQuery = `
+        INSERT INTO coupons (customer_id, points, description, created_at, expires_at, is_used, business_id)
+        VALUES ($1, 4000, 'Xu từ đánh giá chuyến đi', $2, $3, 'Unused', $4)
+      `;
+
+     const expiresAt = moment()
+       .tz("Asia/Ho_Chi_Minh")
+       .add(30, "days")
+       .format("YYYY-MM-DD HH:mm:ss");
+
+      await pool.query(couponQuery, [
+        customerId,
+        currentDateTime,
+        expiresAt,
+        businessId,
+      ]);
+
       res.status(201).json({
-        message: "Đánh giá đã được ghi nhận thành công!",
+        message:
+          "Đánh giá đã được ghi nhận thành công và bạn đã nhận được 5000 điểm thưởng!",
         rating: ratingResult.rows[0],
       });
     } catch (error) {
