@@ -146,7 +146,11 @@ app.post("/auth/google", async (req, res) => {
     const payload = ticket.getPayload();
     const { sub, email, name, picture } = payload;
 
-    const query = "SELECT * FROM accounts WHERE google_id = $1 OR email = $2";
+    const query = `SELECT a.*, c.customer_id
+      FROM 
+        accounts a
+      LEFT JOIN customers c ON a.account_id = c.account_id
+      WHERE a.google_id = $1 OR a.email = $2`;
     const result = await pool.query(query, [sub, email]);
     let account = result.rows[0];
 
@@ -155,9 +159,9 @@ app.post("/auth/google", async (req, res) => {
         INSERT INTO accounts (username, email, name, google_id, status, role_id, confirmation_code, use_confirmation_code)
         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
         RETURNING *`;
-      const confirmationCode = generateRandomCode(5); 
+      const confirmationCode = generateRandomCode(5);
       const insertResult = await pool.query(insertQuery, [
-        email, 
+        email,
         email,
         name,
         sub,
@@ -168,13 +172,17 @@ app.post("/auth/google", async (req, res) => {
       ]);
       account = insertResult.rows[0];
 
-      const customerQuery = "INSERT INTO customers (account_id) VALUES ($1)";
-      await pool.query(customerQuery, [account.account_id]);
+      const customerQuery =
+        "INSERT INTO customers (account_id) VALUES ($1) RETURNING customer_id";
+      const customerResult = await pool.query(customerQuery, [
+        account.account_id,
+      ]);
+      account.customer_id = customerResult.rows[0].customer_id;
     }
 
     const token = jwt.sign(
       { account_id: account.account_id, username: account.username },
-      process.env.SECRET_KEY,
+      process.env.SECRET_KEY
       // { expiresIn: "24h" }
     );
 
@@ -183,9 +191,7 @@ app.post("/auth/google", async (req, res) => {
       role: account.role_id,
       username: account.username,
       account_id: account.account_id,
-      business_id: account.business_id,
       customer_id: account.customer_id,
-      admin_id: account.admin_id,
     });
   } catch (error) {
     console.error("Đăng nhập bằng Google không thành công:", error);
@@ -194,6 +200,7 @@ app.post("/auth/google", async (req, res) => {
       .json({ message: "Đăng nhập không thành công. Vui lòng thử lại sau." });
   }
 });
+
 
 //-----------------------------------------------
 

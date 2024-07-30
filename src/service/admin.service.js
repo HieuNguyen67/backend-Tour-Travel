@@ -1733,8 +1733,9 @@ const updatePoints = async () => {
       const { order_id, business_id, shared_by_customer_id } = order;
       const expiresAt = moment()
         .tz("Asia/Ho_Chi_Minh")
-        .add(30, "days")
+        .add(6, "months")
         .format("YYYY-MM-DD HH:mm:ss");
+
 
       const addPointsQuery = `
         INSERT INTO coupons (customer_id, points, description, created_at, expires_at, is_used, business_id)

@@ -302,8 +302,9 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 
 //-----------------------------------------------
 
-app.get("/list-tours-filter", async (req, res) => {
+app.get("/list-tours-filter/:business_id?", async (req, res) => {
   const { tourcategory_name } = req.query;
+  const { business_id } = req.params;
   if (!tourcategory_name) {
     return res.status(400).json({ error: "Cần có danh mục tour" });
   }
@@ -347,13 +348,22 @@ app.get("/list-tours-filter", async (req, res) => {
       accounts a ON b.account_id = a.account_id
     WHERE
       t.status = 'Active' AND tc.name = $1 AND a.status = 'Active' AND t.quantity > 0
-    GROUP BY
+    
+  `;
+
+    const params = [tourcategory_name];
+  
+  if (business_id) {
+    query += ` AND t.business_id = $2`;
+    params.push(business_id);
+  }
+
+  query += `
+  GROUP BY
       t.tour_id, departure_location_name, dl.location_departure_id, tc.name
     ORDER BY
       t.start_date ASC
   `;
-
-  const params = [tourcategory_name];
 
   try {
     const result = await pool.query(query, params);
@@ -456,6 +466,41 @@ app.post(
       .format("YYYY-MM-DD HH:mm:ss");
 
     try {
+      const query = `
+      SELECT 
+       account_id
+      FROM 
+        customers 
+      WHERE 
+      customer_id = $1`;
+      const result = await pool.query(query, [customerId]);
+      const account = result.rows[0];
+
+      const customerQuery = `
+        SELECT phone_number, name, address, email
+        FROM accounts 
+        WHERE account_id = $1
+      `;
+      const customerResult = await pool.query(customerQuery, [account.account_id]);
+
+      if (customerResult.rows.length === 0) {
+        return res.status(404).json({ message: "Khách hàng không tồn tại" });
+      }
+
+      const customer = customerResult.rows[0];
+      if (
+        !customer.phone_number ||
+        !customer.name ||
+        !customer.address ||
+        !customer.email
+      ) {
+        return res.status(400).json({
+          message:
+            "Khách hàng chưa điền đầy đủ thông tin liên hệ.",
+        });
+      }
+
+      
       const tourQuery = "SELECT * FROM tours WHERE tour_id = $1";
       const tourResult = await pool.query(tourQuery, [tourId]);
 
@@ -774,6 +819,45 @@ app.post(
       .format("YYYY-MM-DD HH:mm:ss");
 
     try {
+
+            const query = `
+      SELECT 
+       account_id
+      FROM 
+        customers 
+      WHERE 
+      customer_id = $1`;
+            const result = await pool.query(query, [customerId]);
+            const account = result.rows[0];
+
+            const customerQuery = `
+        SELECT phone_number, name, address, email
+        FROM accounts 
+        WHERE account_id = $1
+      `;
+            const customerResult = await pool.query(customerQuery, [
+              account.account_id,
+            ]);
+
+            if (customerResult.rows.length === 0) {
+              return res
+                .status(404)
+                .json({ message: "Khách hàng không tồn tại" });
+            }
+
+            const customer = customerResult.rows[0];
+            if (
+              !customer.phone_number ||
+              !customer.name ||
+              !customer.address ||
+              !customer.email
+            ) {
+              return res.status(400).json({
+                message: "Khách hàng chưa điền đầy đủ thông tin liên hệ.",
+              });
+            }
+
+
       const tourQuery = `SELECT * FROM tours WHERE tour_id = $1`;
       const tourResult = await pool.query(tourQuery, [tourId]);
 
@@ -1328,8 +1412,9 @@ app.post(
 
      const expiresAt = moment()
        .tz("Asia/Ho_Chi_Minh")
-       .add(30, "days")
+       .add(6, "months")
        .format("YYYY-MM-DD HH:mm:ss");
+
 
       await pool.query(couponQuery, [
         customerId,
@@ -1653,5 +1738,35 @@ app.get("/shared-tour/:shareToken", async (req, res) => {
     });
   }
 });
+// -----------------------------------------------
+
+app.get("/list-rate-tour/:customerId", async (req, res) => {
+  const { customerId } = req.params;
+  const { statusRating } = req.query; 
+
+  try {
+    const ordersQuery = `
+      SELECT o.* , t.name
+      FROM orders o
+      LEFT JOIN tours t ON o.tour_id = t.tour_id
+
+      WHERE o.customer_id = $1 
+      AND o.status = 'Complete' 
+      AND o.status_rating = $2
+    `;
+
+    const result = await pool.query(ordersQuery, [customerId, statusRating]);
+    const orders = result.rows;
+
+    res.status(200).json(orders);
+  } catch (error) {
+    console.error("Error fetching orders:", error);
+    res
+      .status(500)
+      .json({ message: "Error fetching orders. Please try again later." });
+  }
+});
+
+
 // -----------------------------------------------
 module.exports = app;
