@@ -12,6 +12,7 @@ const {transporter}= require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
 const ExcelJS = require("exceljs");
+const sharp = require("sharp");
 
 
 app.use(bodyParser.json());
@@ -336,18 +337,46 @@ app.post(
         tourcategory_id,
         location_departure_id,
         destination_locations,
-        tour_code
+        tour_code,
       } = req.body;
 
-       const errors = validateTour(req.body);
-       if (errors.length > 0) {
-         return res.status(400).json({ errors });
-       }
+      const errors = validateTour(req.body);
+      if (errors.length > 0) {
+        return res.status(400).json({ errors });
+      }
 
       if (!req.files || req.files.length < 4) {
-        return res
-          .status(400)
-          .json({ error: "Cần ít nhất 4 file ảnh." });
+        return res.status(400).json({ error: "Cần ít nhất 4 file ảnh." });
+      }
+
+      const images = req.files;
+      const resizedImages = [];
+
+      for (let i = 0; i < images.length; i++) {
+        let compressedImageBuffer;
+        let quality = 80; 
+        let width = 800;
+
+        do {
+          compressedImageBuffer = await sharp(images[i].buffer)
+            .resize({ width }) 
+            .jpeg({ quality })
+            .toBuffer();
+
+          if (compressedImageBuffer.length <= 100 * 1024) {
+            break; 
+          }
+
+          if (quality > 10) {
+            quality -= 10;
+          } else if (width > 200) {
+            width -= 100;
+          } else {
+            break; 
+          }
+        } while (compressedImageBuffer.length > 100 * 1024);
+
+        resizedImages.push(compressedImageBuffer);
       }
 
       const newTour = await pool.query(
@@ -368,7 +397,7 @@ app.post(
           tourcategory_id,
           business_id,
           currentDateTime,
-          tour_code
+          tour_code,
         ]
       );
 
@@ -388,14 +417,11 @@ app.post(
         );
       }
 
-      const images = req.files;
-      
-      for (let i = 0; i < images.length; i++) {
-        const image = images[i].buffer;
+      for (let i = 0; i < resizedImages.length; i++) {
         await pool.query(
           `INSERT INTO tourimages (tour_id, image)
               VALUES ($1, $2)`,
-          [tour_id, image]
+          [tour_id, resizedImages[i]]
         );
       }
 
@@ -516,7 +542,7 @@ app.put(
         tourcategory_id,
         location_departure_id,
         destination_locations,
-        tour_code
+        tour_code,
       } = req.body;
       const currentDateTime = moment()
         .tz("Asia/Ho_Chi_Minh")
@@ -531,11 +557,10 @@ app.put(
         return res.status(404).json({ error: "Không tìm thấy tour" });
       }
 
-      
-       const errors = validateTour(req.body);
-       if (errors.length > 0) {
-         return res.status(400).json({ errors });
-       }
+      const errors = validateTour(req.body);
+      if (errors.length > 0) {
+        return res.status(400).json({ errors });
+      }
 
       await pool.query(
         `UPDATE tours
@@ -551,7 +576,7 @@ app.put(
             hotel = $10,
             tourcategory_id = $11,
             created_at = $12,
-            status= 'Active',
+            status = 'Active',
             tour_code = $13
         WHERE tour_id = $14`,
         [
@@ -591,6 +616,46 @@ app.put(
         );
       }
 
+      if (req.files && req.files.length > 0) {
+        const images = req.files;
+        const resizedImages = [];
+
+        for (let i = 0; i < images.length; i++) {
+          let compressedImageBuffer;
+          let quality = 80;
+          let width = 800; 
+
+          do {
+            compressedImageBuffer = await sharp(images[i].buffer)
+              .resize({ width }) 
+              .jpeg({ quality }) 
+              .toBuffer();
+
+            if (compressedImageBuffer.length <= 100 * 1024) {
+              break;
+            }
+
+            if (quality > 10) {
+              quality -= 10;
+            } else if (width > 200) {
+              width -= 100;
+            } else {
+              break;
+            }
+          } while (compressedImageBuffer.length > 100 * 1024);
+
+          resizedImages.push(compressedImageBuffer);
+        }
+
+        for (let i = 0; i < resizedImages.length; i++) {
+          await pool.query(
+            `INSERT INTO tourimages (tour_id, image)
+                VALUES ($1, $2)`,
+            [tour_id, resizedImages[i]]
+          );
+        }
+      }
+
       res.status(200).json({ message: "Cập nhật tour thành công!" });
     } catch (error) {
       console.error("Lỗi khi cập nhật tour: ", error.message);
@@ -598,7 +663,6 @@ app.put(
     }
   }
 );
-
 //-----------------------------------------------
 
 app.put(

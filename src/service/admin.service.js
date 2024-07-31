@@ -12,6 +12,8 @@ const { generateRandomCode } = require("../middlewares/randomcode.js");
 const { transporter } = require("../middlewares/nodemail.js");
 const storage = multer.memoryStorage();
 const upload = multer({ storage: storage });
+const sharp = require("sharp");
+
 const currentDateTime = moment()
   .tz("Asia/Ho_Chi_Minh")
   .format("YYYY-MM-DD HH:mm:ss");
@@ -370,16 +372,17 @@ app.post(
   async (req, res) => {
     const accountId = req.params.account_id;
     const adminId = req.params.adminId;
-    const { title, content, newscategory_id } = req.body
+    const { title, content, newscategory_id } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
       .format("YYYY-MM-DD HH:mm:ss");
-    try {
 
-          const errors = validateNews({ title, content, newscategory_id });
-          if (errors.length > 0) {
-            return res.status(400).json({ errors });
-          }
+    try {
+      const errors = validateNews({ title, content, newscategory_id });
+      if (errors.length > 0) {
+        return res.status(400).json({ errors });
+      }
+
       let query = "";
       if (req.query.role === "3") {
         query = `
@@ -405,10 +408,34 @@ app.post(
 
       let imageInserted = false;
       if (req.file) {
+        let compressedImageBuffer;
+        let quality = 80; 
+        let width = 800;
+
+        do {
+          compressedImageBuffer = await sharp(req.file.buffer)
+            .resize({ width })
+            .jpeg({ quality }) 
+            .toBuffer();
+
+          if (compressedImageBuffer.length <= 100 * 1024) {
+            
+            break;
+          }
+
+          if (quality > 10) {
+            quality -= 10;
+          } else if (width > 200) {
+            width -= 100;
+          } else {
+            break;
+          }
+        } while (compressedImageBuffer.length > 100 * 1024);
+
         const imageInsertQuery = `
           UPDATE news SET image = $1 WHERE news_id = $2
         `;
-        await pool.query(imageInsertQuery, [req.file.buffer, newsId]);
+        await pool.query(imageInsertQuery, [compressedImageBuffer, newsId]);
         imageInserted = true;
       }
 
@@ -431,9 +458,7 @@ app.post(
           .status(201)
           .json({ message: "Thêm tin tức thành công", news_id: newsId });
       } else {
-        res
-          .status(400)
-          .json({ message: "Vui lòng tải lên một file hình ảnh" });
+        res.status(400).json({ message: "Vui lòng tải lên một file hình ảnh" });
       }
     } catch (error) {
       console.error("Lỗi đăng tin tức:", error);

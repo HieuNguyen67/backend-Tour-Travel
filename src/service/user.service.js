@@ -570,7 +570,7 @@ app.get("/list-news-travel/:category", async (req, res) => {
   try {
     const category = req.params.category;
     const query = `
-      SELECT n.news_id, n.title, n.content, nc.name as category_name, n.created_at, n.status, n.note, n.image,
+      SELECT n.news_id, n.title, LEFT(n.content, 100) as content, nc.name as category_name, n.created_at, n.status, n.note, n.image,
         CASE
           WHEN n.posted_by_type = 'admin' THEN a.name
           WHEN n.posted_by_type = 'business' THEN a.name

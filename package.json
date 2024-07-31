@@ -20,6 +20,7 @@
     "nodemailer": "^6.9.13",
     "pg": "^8.11.5",
     "querystring": "^0.2.1",
+    "sharp": "^0.33.4",
     "uuid": "^10.0.0"
   },
   "engines": {

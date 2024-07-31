@@ -15,6 +15,8 @@ const { generateRandomCode } = require("../middlewares/randomcode.js");
 const { transporter } = require("../middlewares/nodemail.js");
 const ExcelJS = require("exceljs");
 const upload = multer({ storage: multer.memoryStorage() });
+const dotenv = require("dotenv");
+dotenv.config();
 
 const formatDate = (
   date,
@@ -459,6 +461,7 @@ app.post(
       infant_quantity,
       note,
       passengers: passengersFromBody,
+      coupon_ids,
     } = req.body;
 
     const currentDateTime = moment()
@@ -466,6 +469,7 @@ app.post(
       .format("YYYY-MM-DD HH:mm:ss");
 
     try {
+
       const query = `
       SELECT 
        account_id
@@ -508,6 +512,8 @@ app.post(
         return res.status(404).json({ message: "Tour không tồn tại" });
       }
 
+      
+
       const tour = tourResult.rows[0];
       const total_quantity =
         parseInt(adult_quantity) +
@@ -521,6 +527,37 @@ app.post(
         tour.adult_price * adult_quantity +
         tour.child_price * child_quantity +
         tour.infant_price * infant_quantity;
+
+         let discounted_price = total_price;
+         if (coupon_ids && coupon_ids.length > 0) {
+           var coupon_list = JSON.parse(coupon_ids);
+           for (const coupon_id of coupon_list) {
+             const couponResult = await pool.query(
+               `
+          SELECT points FROM coupons
+          WHERE coupon_id = $1
+            AND customer_id = $2
+            AND business_id = $3
+            AND is_used = 'Unused';
+        `,
+               [coupon_id, customerId, tour.business_id]
+             );
+
+             if (couponResult.rows.length > 0) {
+               const points = couponResult.rows[0].points;
+               discounted_price -= points; 
+
+               await pool.query(
+                 `
+            UPDATE coupons
+            SET is_used = 'Used'
+            WHERE coupon_id = $1;
+          `,
+                 [coupon_id]
+               );
+             }
+           }
+         }
 
       let passengers = [];
 
@@ -629,7 +666,7 @@ app.post(
         adult_quantity,
         child_quantity,
         infant_quantity,
-        total_price,
+        discounted_price,
         currentDateTime,
         note,
         customerId,
@@ -796,8 +833,7 @@ const momoConfig = {
   accessKey: "F8BBA842ECF85",
   secretKey: "K951B6PE1waDMi640xX08PD3vg6EkVlz",
   endpoint: "https://test-payment.momo.vn/v2/gateway/api/create",
-  ipnUrl:
-    "https://ee26-171-253-128-178.ngrok-free.app/v1/api/customer/momo/webhook",
+  ipnUrl: process.env.IPN_URL,
 };
 
 app.post(
@@ -813,6 +849,7 @@ app.post(
       note,
       paymentMethod,
       passengers: passengersFromBody,
+      coupon_ids,
     } = req.body;
     const currentDateTime = moment()
       .tz("Asia/Ho_Chi_Minh")
@@ -878,6 +915,38 @@ app.post(
         tour.adult_price * adult_quantity +
         tour.child_price * child_quantity +
         tour.infant_price * infant_quantity;
+
+          let discounted_price = total_price;
+          if (coupon_ids && coupon_ids.length > 0) {
+            var coupon_list = JSON.parse(coupon_ids);
+            for (const coupon_id of coupon_list) {
+              const couponResult = await pool.query(
+                `
+          SELECT points FROM coupons
+          WHERE coupon_id = $1
+            AND customer_id = $2
+            AND business_id = $3
+            AND is_used = 'Unused';
+        `,
+                [coupon_id, customerId, tour.business_id]
+              );
+
+              if (couponResult.rows.length > 0) {
+                const points = couponResult.rows[0].points;
+                discounted_price -= points; 
+
+                await pool.query(
+                  `
+            UPDATE coupons
+            SET is_used = 'Used'
+            WHERE coupon_id = $1;
+          `,
+                  [coupon_id]
+                );
+              }
+            }
+          }
+
       let passengers = [];
 
       if (req.file) {
@@ -978,7 +1047,7 @@ app.post(
         adult_quantity,
         child_quantity,
         infant_quantity,
-        total_price,
+        discounted_price,
         currentDateTime,
         note,
         customerId,
@@ -1015,7 +1084,7 @@ app.post(
       const requestId = `${Date.now()}`;
       const orderId = code_order;
       const orderInfo = `Thanh toan cho don hang ${code_order}`;
-      const amount = total_price.toString();
+      const amount = discounted_price.toString();
       const extraData = "";
       const requestType = paymentMethod;
 
@@ -1766,6 +1835,30 @@ app.get("/list-rate-tour/:customerId", async (req, res) => {
       .json({ message: "Error fetching orders. Please try again later." });
   }
 });
+// -----------------------------------------------
+app.get("/coupons/:customer_id/:business_id", async (req, res) => {
+  const { customer_id, business_id } = req.params;
+
+  try {
+    const query = `
+      SELECT coupon_id, points, description, created_at, expires_at, is_used, business_id
+      FROM coupons
+      WHERE customer_id = $1
+        AND business_id = $2
+        AND is_used = 'Unused';
+    `;
+
+    const result = await pool.query(query, [customer_id, business_id]);
+    const coupons = result.rows;
+    const total_points = coupons.reduce((sum, coupon) => sum + parseFloat(coupon.points), 0);
+
+    res.json({ coupons, total_points });
+  } catch (error) {
+    console.error("Error fetching coupons:", error);
+    res.status(500).json({ error: "Internal Server Error" });
+  }
+});
+
 
 
 // -----------------------------------------------
