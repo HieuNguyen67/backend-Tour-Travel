@@ -1859,7 +1859,152 @@ app.get("/coupons/:customer_id/:business_id", async (req, res) => {
   }
 });
 
+// -----------------------------------------------
 
 
+app.post(
+  "/favorites/:customerId/:tourId",
+  authenticateToken,
+  async (req, res) => {
+    const { customerId, tourId } = req.params;
+     const currentDateTime = moment()
+       .tz("Asia/Ho_Chi_Minh")
+       .format("YYYY-MM-DD HH:mm:ss");
+    try {
+      const checkFavoriteQuery = `
+      SELECT * FROM favorites
+      WHERE customer_id = $1 AND tour_id = $2
+    `;
+      const checkFavoriteResult = await pool.query(checkFavoriteQuery, [
+        customerId,
+        tourId,
+      ]);
+
+      if (checkFavoriteResult.rows.length > 0) {
+        return res.status(400).json({ message: "Mục yêu thích đã tồn tại" });
+      }
+
+      const insertFavoriteQuery = `
+      INSERT INTO favorites (customer_id, tour_id, created_at)
+      VALUES ($1, $2, $3)
+      RETURNING *
+    `;
+      const insertFavoriteResult = await pool.query(insertFavoriteQuery, [
+        customerId,
+        tourId,
+        currentDateTime,
+      ]);
+      const newFavorite = insertFavoriteResult.rows[0];
+
+      res.status(201).json({
+        message: "Đã thêm mục yêu thích thành công!",
+        favorite: newFavorite,
+      });
+    } catch (error) {
+      console.error("Lỗi khi thêm mục yêu thích:", error);
+      res.status(500).json({
+        message: "Lỗi khi thêm mục yêu thích. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+app.delete(
+  "/favorites/:customerId/:tourId",
+  authenticateToken,
+  async (req, res) => {
+    const { customerId, tourId } = req.params;
+
+    try {
+      const deleteFavoriteQuery = `
+      DELETE FROM favorites
+      WHERE customer_id = $1 AND tour_id = $2
+      RETURNING *
+    `;
+      const deleteFavoriteResult = await pool.query(deleteFavoriteQuery, [
+        customerId,
+        tourId,
+      ]);
+
+      if (deleteFavoriteResult.rowCount === 0) {
+        return res.status(404).json({ message: "Mục yêu thích không tồn tại" });
+      }
+
+      res.status(200).json({
+        message: "Đã xóa mục yêu thích thành công!",
+      });
+    } catch (error) {
+      console.error("Lỗi khi xóa mục yêu thích:", error);
+      res.status(500).json({
+        message: "Lỗi khi xóa mục yêu thích. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+app.get(
+  "/favorites/check/:customerId/:tourId",
+  authenticateToken,
+  async (req, res) => {
+    const { customerId, tourId } = req.params;
+
+    try {
+      const checkFavoriteQuery = `
+      SELECT * FROM favorites
+      WHERE customer_id = $1 AND tour_id = $2
+    `;
+      const checkFavoriteResult = await pool.query(checkFavoriteQuery, [
+        customerId,
+        tourId,
+      ]);
+
+      const isFavorite = checkFavoriteResult.rows.length > 0;
+
+      res.status(200).json({
+        isFavorite,
+      });
+    } catch (error) {
+      console.error("Lỗi khi kiểm tra mục yêu thích:", error);
+      res.status(500).json({
+        message: "Lỗi khi kiểm tra mục yêu thích. Vui lòng thử lại sau.",
+      });
+    }
+  }
+);
+// -----------------------------------------------
+
+app.get("/list-favorites/:customerId", authenticateToken, async (req, res) => {
+  const { customerId } = req.params;
+
+  try {
+    const favoritesQuery = `
+      SELECT 
+      f.favorite_id, 
+      f.customer_id, 
+      f.tour_id, 
+      f.created_at, 
+      t.name, 
+      t.adult_price,
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image
+      FROM favorites f
+      JOIN tours t ON f.tour_id = t.tour_id
+      WHERE f.customer_id = $1 AND t.status = 'Active'
+    `;
+    const favoritesResult = await pool.query(favoritesQuery, [customerId]);
+
+    const favorites = favoritesResult.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString("base64") : null,
+    }));
+
+    res.status(200).json({
+      message: "Lấy danh sách tour yêu thích thành công!",
+      favorites,
+    });
+  } catch (error) {
+    console.error("Lỗi khi lấy danh sách tour yêu thích:", error);
+    res.status(500).json({
+      message: "Lỗi khi lấy danh sách tour yêu thích. Vui lòng thử lại sau.",
+    });
+  }
+});
 // -----------------------------------------------
 module.exports = app;
