@@ -1088,7 +1088,7 @@ app.post(
       const extraData = "";
       const requestType = paymentMethod;
 
-      const returnUrl = `http://localhost:3000/checkout`;
+      const returnUrl = process.env.RETURN_URL;
 
       const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
       const signature = crypto
