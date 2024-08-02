@@ -304,14 +304,13 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 
 //-----------------------------------------------
 
-app.get("/list-tours-filter/:business_id?", async (req, res) => {
-  const { tourcategory_name } = req.query;
-  const { business_id } = req.params;
-  if (!tourcategory_name) {
-    return res.status(400).json({ error: "Cần có danh mục tour" });
-  }
+app.get(
+  "/list-tours-filter/:tourcategory_name?/:business_id?",
+  async (req, res) => {
+    const { tourcategory_name } = req.params;
+    const { business_id } = req.params;
 
-  let query = `
+    let query = `
     SELECT
       t.tour_id,
       t.name AS tour_name,
@@ -349,38 +348,42 @@ app.get("/list-tours-filter/:business_id?", async (req, res) => {
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
     WHERE
-      t.status = 'Active' AND tc.name = $1 AND a.status = 'Active' AND t.quantity > 0
+      t.status = 'Active'  AND a.status = 'Active' AND t.quantity > 0
     
   `;
 
-    const params = [tourcategory_name];
-  
-  if (business_id) {
-    query += ` AND t.business_id = $2`;
-    params.push(business_id);
-  }
+    const params = [];
+    if (tourcategory_name) {
+      query += `AND tc.name = $1`;
+      params.push(tourcategory_name);
+    }
+    if (business_id) {
+      query += ` AND t.business_id = $2`;
+      params.push(business_id);
+    }
 
-  query += `
+    query += `
   GROUP BY
       t.tour_id, departure_location_name, dl.location_departure_id, tc.name
     ORDER BY
       t.start_date ASC
   `;
 
-  try {
-    const result = await pool.query(query, params);
+    try {
+      const result = await pool.query(query, params);
 
-    const tours = result.rows.map((row) => ({
-      ...row,
-      image: row.image ? row.image.toString("base64") : null,
-    }));
+      const tours = result.rows.map((row) => ({
+        ...row,
+        image: row.image ? row.image.toString("base64") : null,
+      }));
 
-    res.json(tours);
-  } catch (error) {
-    console.error("Lỗi khi thực hiện truy vấn", error.stack);
-    res.status(500).json({ error: "Internal server error" });
+      res.json(tours);
+    } catch (error) {
+      console.error("Lỗi khi thực hiện truy vấn", error.stack);
+      res.status(500).json({ error: "Internal server error" });
+    }
   }
-});
+);
 
 
 //-----------------------------------------------

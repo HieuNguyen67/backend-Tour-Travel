@@ -285,7 +285,7 @@ app.get("/account/:id", authenticateToken, async (req, res) => {
     res.json(accountData);
   } catch (error) {
     console.error("Lỗi khi lấy thông tin tài khoản:", error);
-    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
+    res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau nhé." });
   }
 });
 
@@ -461,15 +461,43 @@ app.put("/account/change-password/:id", authenticateToken, async (req, res) => {
 
 //-----------------------------------------------
 
-app.get("/account/image/:accountId", async (req, res) => {
-  const { accountId } = req.params;
+app.get("/accounts/image/:accountId?/:businessId?", async (req, res) => {
+  const { accountId, businessId } = req.params;
 
   try {
-    const query = "SELECT image FROM accounts WHERE account_id = $1";
-    const result = await pool.query(query, [accountId]);
+    let query;
+    let queryParams = [];
+    let accountIdToUse;
 
-    const imageData = result.rows[0].image;
-    if (imageData != null) {
+    if (businessId) {
+      query = "SELECT account_id FROM business WHERE business_id = $1";
+      const result = await pool.query(query, [businessId]);
+
+      if (result.rows.length === 0) {
+        return res
+          .status(404)
+          .json({
+            message: "Không tìm thấy tài khoản tương ứng với business_id.",
+          });
+      }
+
+      accountIdToUse = result.rows[0].account_id;
+    } else if (accountId) {
+      accountIdToUse = accountId;
+    } else {
+      return res
+        .status(400)
+        .json({
+          message:
+            "Cần phải cung cấp ít nhất một tham số: accountId hoặc businessId.",
+        });
+    }
+
+    query = "SELECT image FROM accounts WHERE account_id = $1";
+    const imageResult = await pool.query(query, [accountIdToUse]);
+
+    const imageData = imageResult.rows[0].image;
+    if (imageData) {
       res.set("Content-Type", "image/jpeg");
       res.send(imageData);
     } else {
@@ -480,6 +508,8 @@ app.get("/account/image/:accountId", async (req, res) => {
     res.status(500).json({ message: "Đã xảy ra lỗi. Vui lòng thử lại sau." });
   }
 });
+
+
 
 //-----------------------------------------------
 
@@ -628,7 +658,7 @@ app.get("/get-tour/:tourId", async (req, res) => {
     const tourId = req.params.tourId;
 
     const tourQuery = await pool.query(
-      `SELECT t.*, a.name as account_name,tc.name as category_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
+      `SELECT t.*, a.name as account_name, tc.name as category_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
       FROM tours t
          LEFT JOIN business b ON t.business_id = b.business_id
          LEFT JOIN tourcategories tc ON t.tourcategory_id  = tc.tourcategory_id 

@@ -344,11 +344,9 @@ app.post(
       if (errors.length > 0) {
         return res.status(400).json({ errors });
       }
-
       if (!req.files || req.files.length < 4) {
         return res.status(400).json({ error: "Cần ít nhất 4 file ảnh." });
       }
-
       const images = req.files;
       const resizedImages = [];
 
@@ -1758,7 +1756,34 @@ app.put(
     }
   }
 );
+// -----------------------------------------------
 
+app.get("/contact-stats/:businessId", async (req, res) => {
+  const { businessId } = req.params;
+
+  try {
+    const query = `
+      SELECT
+        (COUNT(CASE WHEN status = 'Confirm' THEN 1 END) * 100.0 / COUNT(*)) AS confirm_rate
+      FROM contacts_business
+      WHERE business_id = $1;
+    `;
+    const result = await pool.query(query, [businessId]);
+    const confirmRate = result.rows[0].confirm_rate;
+
+    const formattedRate = `${parseInt(confirmRate)}%`;
+
+    res.status(200).json({
+      message: "Tỷ lệ contact với status Confirm thành công!",
+      confirmRate: formattedRate, 
+    });
+  } catch (error) {
+    console.error("Lỗi khi tính tỷ lệ contact với status Confirm:", error);
+    res.status(500).json({
+      message: "Lỗi khi tính tỷ lệ contact. Vui lòng thử lại sau.",
+    });
+  }
+});
 
 
 
