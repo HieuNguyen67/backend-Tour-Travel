@@ -1764,18 +1764,27 @@ app.get("/contact-stats/:businessId", async (req, res) => {
   try {
     const query = `
       SELECT
-        (COUNT(CASE WHEN status = 'Confirm' THEN 1 END) * 100.0 / COUNT(*)) AS confirm_rate
+        COUNT(*) AS total_contacts,
+        COUNT(CASE WHEN status = 'Confirm' THEN 1 END) AS confirmed_contacts
       FROM contacts_business
       WHERE business_id = $1;
     `;
     const result = await pool.query(query, [businessId]);
-    const confirmRate = result.rows[0].confirm_rate;
+    const { total_contacts, confirmed_contacts } = result.rows[0];
+
+    let confirmRate = 0;
+
+    if (total_contacts > 0) {
+      confirmRate = (confirmed_contacts * 100.0) / total_contacts;
+    } else {
+      confirmRate = 100; 
+    }
 
     const formattedRate = `${parseInt(confirmRate)}%`;
 
     res.status(200).json({
       message: "Tỷ lệ contact với status Confirm thành công!",
-      confirmRate: formattedRate, 
+      confirmRate: formattedRate,
     });
   } catch (error) {
     console.error("Lỗi khi tính tỷ lệ contact với status Confirm:", error);
