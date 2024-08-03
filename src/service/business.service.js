@@ -1794,6 +1794,34 @@ app.get("/contact-stats/:businessId", async (req, res) => {
   }
 });
 
+app.get("/detail-business/:business_id", async (req, res) => {
+  const { business_id } = req.params;
+
+  const query = `
+    SELECT
+      b.business_id,
+      b.account_id,
+      a.name AS account_name
+    FROM
+      business b
+    LEFT JOIN
+      accounts a ON b.account_id = a.account_id
+    WHERE
+      b.business_id = $1
+  `;
+
+  try {
+    const result = await pool.query(query, [business_id]);
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "Business not found" });
+    }
+    res.json(result.rows[0]);
+  } catch (error) {
+    console.error("Lỗi khi thực hiện truy vấn", error.stack);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
 
 

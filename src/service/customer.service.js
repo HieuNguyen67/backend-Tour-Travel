@@ -303,14 +303,11 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 });
 
 //-----------------------------------------------
+app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
+  const { tourcategory_name } = req.params;
+  const { business_id } = req.query;
 
-app.get(
-  "/list-tours-filter/:tourcategory_name?/:business_id?",
-  async (req, res) => {
-    const { tourcategory_name } = req.params;
-    const { business_id } = req.params;
-
-    let query = `
+  let query = `
     SELECT
       t.tour_id,
       t.name AS tour_name,
@@ -325,7 +322,9 @@ app.get(
       t.created_at,
       t.vehicle,
       t.hotel,
+      t.business_id,
       dl.location_departure_id,
+      a.name as account_name,
       array_agg(dsl.location_destination_id) AS destination_locations,
       ldep.location_name as departure_location_name,
       array_agg(ldes.location_name) as destination_location_name,
@@ -348,42 +347,42 @@ app.get(
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
     WHERE
-      t.status = 'Active'  AND a.status = 'Active' AND t.quantity > 0
-    
-  `;
+      t.status = 'Active' AND a.status = 'Active' AND t.quantity > 0
+    `;
 
-    const params = [];
-    if (tourcategory_name) {
-      query += `AND tc.name = $1`;
-      params.push(tourcategory_name);
-    }
-    if (business_id) {
-      query += ` AND t.business_id = $2`;
-      params.push(business_id);
-    }
+  const params = [];
+  let paramIndex = 1;
 
-    query += `
-  GROUP BY
-      t.tour_id, departure_location_name, dl.location_departure_id, tc.name
+  if (tourcategory_name) {
+    query += ` AND tc.name = $${paramIndex++}`;
+    params.push(tourcategory_name);
+  }
+  if (business_id) {
+    query += ` AND t.business_id = $${paramIndex++}`;
+    params.push(business_id);
+  }
+
+  query += `
+    GROUP BY
+      t.tour_id, departure_location_name, dl.location_departure_id, tc.name, account_name
     ORDER BY
       t.start_date ASC
-  `;
+    `;
 
-    try {
-      const result = await pool.query(query, params);
+  try {
+    const result = await pool.query(query, params);
 
-      const tours = result.rows.map((row) => ({
-        ...row,
-        image: row.image ? row.image.toString("base64") : null,
-      }));
+    const tours = result.rows.map((row) => ({
+      ...row,
+      image: row.image ? row.image.toString("base64") : null,
+    }));
 
-      res.json(tours);
-    } catch (error) {
-      console.error("Lỗi khi thực hiện truy vấn", error.stack);
-      res.status(500).json({ error: "Internal server error" });
-    }
+    res.json(tours);
+  } catch (error) {
+    console.error("Lỗi khi thực hiện truy vấn", error.stack);
+    res.status(500).json({ error: "Internal server error" });
   }
-);
+});
 
 
 //-----------------------------------------------

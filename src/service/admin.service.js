@@ -280,10 +280,11 @@ app.get("/get-users", async (req, res) => {
   const { role_id } = req.query;
 
   try {
+    
     const query = `
-      SELECT  username, status, account_id, role_id, name, birth_of_date, 
-             phone_number,address, email, image
-      FROM accounts
+      SELECT  a.*, b.business_id
+      FROM accounts a
+      lEFT JOIN business b ON a.account_id = b.account_id
       WHERE role_id = $1
     `;
     const result = await pool.query(query, [role_id]);
