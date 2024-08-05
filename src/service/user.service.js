@@ -5,6 +5,7 @@ const app = express.Router();
 const pool = require("../../connectDB.js");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcryptjs");
+const moment = require("moment");
 const bodyParser = require("body-parser");
 const { authenticateToken } = require("../middlewares/authen.js");
 const { OAuth2Client } = require("google-auth-library");
@@ -657,21 +658,31 @@ app.get("/get-tour/:tourId", async (req, res) => {
   try {
     const tourId = req.params.tourId;
 
+    const currentDateTime = moment()
+      .tz("Asia/Ho_Chi_Minh")
+      .format("YYYY-MM-DD HH:mm:ss");
+
     const tourQuery = await pool.query(
-      `SELECT t.*, a.name as account_name, tc.name as category_name, dl.location_departure_id , array_agg(ldes.location_name) as destination_location_name, ldep.location_name as departure_location_name, array_agg(dst.location_destination_id) as destination_locations
-      FROM tours t
-         LEFT JOIN business b ON t.business_id = b.business_id
-         LEFT JOIN tourcategories tc ON t.tourcategory_id  = tc.tourcategory_id 
-    LEFT JOIN 
-      accounts a ON b.account_id = a.account_id
-      LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
+      `SELECT t.*,
+              a.name as account_name,
+              tc.name as category_name,
+              dl.location_departure_id,
+              array_agg(ldes.location_name) as destination_location_name,
+              ldep.location_name as departure_location_name,
+              array_agg(dst.location_destination_id) as destination_locations,
+              COALESCE(d.discount_percentage, 0) AS discount_percentage
+       FROM tours t
+       LEFT JOIN business b ON t.business_id = b.business_id
+       LEFT JOIN tourcategories tc ON t.tourcategory_id = tc.tourcategory_id
+       LEFT JOIN accounts a ON b.account_id = a.account_id
+       LEFT JOIN departurelocation dl ON t.tour_id = dl.tour_id
        LEFT JOIN locations ldep ON dl.location_departure_id = ldep.location_id
-      LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
-      LEFT JOIN
-      locations ldes ON dst.location_destination_id = ldes.location_id
-      WHERE t.tour_id = $1
-      GROUP BY t.tour_id, a.name,category_name, departure_location_name, dl.location_departure_id`,
-      [tourId]
+       LEFT JOIN destinationlocation dst ON t.tour_id = dst.tour_id
+       LEFT JOIN locations ldes ON dst.location_destination_id = ldes.location_id
+       LEFT JOIN discounts d ON t.tour_id = d.tour_id AND $1 BETWEEN d.start_date AND d.end_date
+       WHERE t.tour_id = $2
+       GROUP BY t.tour_id, a.name, category_name, departure_location_name, dl.location_departure_id, d.discount_percentage`,
+      [currentDateTime, tourId]
     );
 
     if (tourQuery.rows.length === 0) {
@@ -679,6 +690,14 @@ app.get("/get-tour/:tourId", async (req, res) => {
     }
 
     const tour = tourQuery.rows[0];
+      const discount = tour.discount_percentage || 0;
+      const adult_price_discount = tour.adult_price * (1 - discount / 100);
+      const child_price_discount = tour.child_price * (1 - discount / 100);
+      const infant_price_discount = tour.infant_price * (1 - discount / 100);
+
+      tour.adult_price_discount = adult_price_discount;
+      tour.child_price_discount = child_price_discount;
+      tour.infant_price_discount = infant_price_discount;
 
     res.status(200).json(tour);
   } catch (error) {
@@ -686,7 +705,6 @@ app.get("/get-tour/:tourId", async (req, res) => {
     res.status(500).json({ error: "Server error" });
   }
 });
-
 //-----------------------------------------------
 
 app.get("/get-all-tour-images/:tourId", async (req, res) => {

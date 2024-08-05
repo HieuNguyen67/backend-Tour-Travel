@@ -1822,8 +1822,102 @@ app.get("/detail-business/:business_id", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+// -----------------------------------------------
 
+app.post("/add-discount/:tourId", authenticateToken,async (req, res) => {
+  const { tourId } = req.params;
+  const { discount_percentage, start_date, end_date } = req.body;
 
+  try {
+    const checkDiscountQuery = `
+      SELECT * FROM discounts
+      WHERE tour_id = $1
+    `;
+    const checkResult = await pool.query(checkDiscountQuery, [tourId]);
 
+    if (checkResult.rows.length > 0) {
+      return res.status(400).json({
+        message: "Discount đã tồn tại cho tour này.",
+      });
+    }
+
+    const addDiscountQuery = `
+      INSERT INTO discounts (tour_id, discount_percentage, start_date, end_date)
+      VALUES ($1, $2, $3, $4)
+      RETURNING *
+    `;
+    const addResult = await pool.query(addDiscountQuery, [
+      tourId,
+      discount_percentage,
+      start_date,
+      end_date,
+    ]);
+
+    const newDiscount = addResult.rows[0];
+
+    res.status(201).json({
+      message: "Thêm discount thành công!",
+      discount: newDiscount,
+    });
+  } catch (error) {
+    console.error("Lỗi khi thêm discount:", error);
+    res.status(500).json({
+      message: "Lỗi khi thêm discount. Vui lòng thử lại sau.",
+    });
+  }
+});
+// -----------------------------------------------
+app.get("/discounts/:tourId", async (req, res) => {
+  const { tourId } = req.params;
+
+  try {
+    const query = `
+      SELECT discount_id, discount_percentage, start_date, end_date
+      FROM discounts
+      WHERE tour_id = $1;
+    `;
+    const result = await pool.query(query, [tourId]);
+
+    res.status(200).json({
+      message: "Lấy thông tin giảm giá thành công!",
+      discounts: result.rows || [], 
+    });
+  } catch (error) {
+    console.error("Lỗi khi lấy thông tin giảm giá:", error);
+    res.status(500).json({
+      message: "Lỗi khi lấy thông tin giảm giá. Vui lòng thử lại sau.",
+    });
+  }
+});
+
+//-----------------------------------------------
+app.delete("/delete-discounts/:discountId", async (req, res) => {
+  const { discountId } = req.params;
+
+  try {
+    const query = `
+      DELETE FROM discounts
+      WHERE discount_id = $1
+      RETURNING discount_id;
+    `;
+    const result = await pool.query(query, [discountId]);
+
+    if (result.rowCount === 0) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy discount để xoá cho tour này." });
+    }
+
+    res.status(200).json({
+      message: "Xoá discount thành công!",
+      deletedDiscountId: result.rows[0].discount_id,
+    });
+  } catch (error) {
+    console.error("Lỗi khi xoá discount:", error);
+    res.status(500).json({
+      message: "Lỗi khi xoá discount. Vui lòng thử lại sau.",
+    });
+  }
+});
 // -----------------------------------------------
 module.exports = app;

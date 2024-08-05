@@ -306,7 +306,10 @@ app.post("/send-contact-business/:businessId/:tourId", async (req, res) => {
 app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
   const { tourcategory_name } = req.params;
   const { business_id } = req.query;
-
+const currentDateTime = moment()
+  .tz("Asia/Ho_Chi_Minh")
+  .format("YYYY-MM-DD HH:mm:ss");
+  
   let query = `
     SELECT
       t.tour_id,
@@ -329,7 +332,8 @@ app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
       ldep.location_name as departure_location_name,
       array_agg(ldes.location_name) as destination_location_name,
       tc.name AS tourcategory_name,
-      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image
+      (SELECT ti.image FROM tourimages ti WHERE ti.tour_id = t.tour_id ORDER BY ti.id ASC LIMIT 1) AS image,
+      COALESCE(d.discount_percentage, 0) AS discount_percentage
     FROM
       tours t
     LEFT JOIN
@@ -346,12 +350,14 @@ app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
       business b ON t.business_id = b.business_id
     LEFT JOIN 
       accounts a ON b.account_id = a.account_id
+    LEFT JOIN
+      discounts d ON t.tour_id = d.tour_id AND $1 BETWEEN d.start_date AND d.end_date
     WHERE
       t.status = 'Active' AND a.status = 'Active' AND t.quantity > 0
     `;
 
-  const params = [];
-  let paramIndex = 1;
+  const params = [currentDateTime];
+  let paramIndex = 2;
 
   if (tourcategory_name) {
     query += ` AND tc.name = $${paramIndex++}`;
@@ -364,7 +370,7 @@ app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
 
   query += `
     GROUP BY
-      t.tour_id, departure_location_name, dl.location_departure_id, tc.name, account_name
+      t.tour_id, departure_location_name, dl.location_departure_id, tc.name, account_name, d.discount_percentage
     ORDER BY
       t.start_date ASC
     `;
@@ -372,10 +378,21 @@ app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
   try {
     const result = await pool.query(query, params);
 
-    const tours = result.rows.map((row) => ({
-      ...row,
-      image: row.image ? row.image.toString("base64") : null,
-    }));
+    const tours = result.rows.map((row) => {
+      const discount = row.discount_percentage || 0;
+      const adult_price_discount = row.adult_price * (1 - discount / 100);
+      const child_price_discount = row.child_price * (1 - discount / 100);
+      const infant_price_discount = row.infant_price * (1 - discount / 100);
+
+      return {
+        ...row,
+        image: row.image ? row.image.toString("base64") : null,
+        adult_price_discount: adult_price_discount,
+        child_price_discount: child_price_discount,
+        infant_price_discount: infant_price_discount,
+        discount_percentage: discount, 
+      };
+    });
 
     res.json(tours);
   } catch (error) {
@@ -383,6 +400,7 @@ app.get("/list-tours-filter/:tourcategory_name?", async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
+
 
 
 //-----------------------------------------------
