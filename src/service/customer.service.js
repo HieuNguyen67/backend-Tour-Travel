@@ -489,7 +489,6 @@ app.post(
       .format("YYYY-MM-DD HH:mm:ss");
 
     try {
-
       const query = `
       SELECT 
        account_id
@@ -505,7 +504,9 @@ app.post(
         FROM accounts 
         WHERE account_id = $1
       `;
-      const customerResult = await pool.query(customerQuery, [account.account_id]);
+      const customerResult = await pool.query(customerQuery, [
+        account.account_id,
+      ]);
 
       if (customerResult.rows.length === 0) {
         return res.status(404).json({ message: "Khách hàng không tồn tại" });
@@ -519,20 +520,16 @@ app.post(
         !customer.email
       ) {
         return res.status(400).json({
-          message:
-            "Khách hàng chưa điền đầy đủ thông tin liên hệ.",
+          message: "Khách hàng chưa điền đầy đủ thông tin liên hệ.",
         });
       }
 
-      
       const tourQuery = "SELECT * FROM tours WHERE tour_id = $1";
       const tourResult = await pool.query(tourQuery, [tourId]);
 
       if (tourResult.rows.length === 0) {
         return res.status(404).json({ message: "Tour không tồn tại" });
       }
-
-      
 
       const tour = tourResult.rows[0];
       const total_quantity =
@@ -543,41 +540,56 @@ app.post(
         return res.status(400).json({ message: "Số lượng không đủ" });
       }
 
-      const total_price =
+      let total_price =
         tour.adult_price * adult_quantity +
         tour.child_price * child_quantity +
         tour.infant_price * infant_quantity;
 
-         let discounted_price = total_price;
-         if (coupon_ids && coupon_ids.length > 0) {
-           var coupon_list = JSON.parse(coupon_ids);
-           for (const coupon_id of coupon_list) {
-             const couponResult = await pool.query(
-               `
+      const discountQuery = `
+        SELECT discount_percentage
+        FROM discounts
+        WHERE tour_id = $1
+          AND $2 BETWEEN start_date AND end_date
+      `;
+      const discountResult = await pool.query(discountQuery, [
+        tourId,
+        currentDateTime,
+      ]);
+      if (discountResult.rows.length > 0) {
+        const discount_percentage = discountResult.rows[0].discount_percentage;
+        total_price -= total_price * (discount_percentage / 100);
+      }
+
+      let discounted_price = total_price;
+      if (coupon_ids && coupon_ids.length > 0) {
+        var coupon_list = JSON.parse(coupon_ids);
+        for (const coupon_id of coupon_list) {
+          const couponResult = await pool.query(
+            `
           SELECT points FROM coupons
           WHERE coupon_id = $1
             AND customer_id = $2
             AND business_id = $3
             AND is_used = 'Unused';
         `,
-               [coupon_id, customerId, tour.business_id]
-             );
+            [coupon_id, customerId, tour.business_id]
+          );
 
-             if (couponResult.rows.length > 0) {
-               const points = couponResult.rows[0].points;
-               discounted_price -= points; 
+          if (couponResult.rows.length > 0) {
+            const points = couponResult.rows[0].points;
+            discounted_price -= points;
 
-               await pool.query(
-                 `
+            await pool.query(
+              `
             UPDATE coupons
             SET is_used = 'Used'
             WHERE coupon_id = $1;
           `,
-                 [coupon_id]
-               );
-             }
-           }
-         }
+              [coupon_id]
+            );
+          }
+        }
+      }
 
       let passengers = [];
 
@@ -931,10 +943,26 @@ app.post(
         return res.status(400).json({ message: "Số lượng không đủ" });
       }
 
-      const total_price =
-        tour.adult_price * adult_quantity +
-        tour.child_price * child_quantity +
-        tour.infant_price * infant_quantity;
+       let total_price =
+         tour.adult_price * adult_quantity +
+         tour.child_price * child_quantity +
+         tour.infant_price * infant_quantity;
+
+       const discountQuery = `
+        SELECT discount_percentage
+        FROM discounts
+        WHERE tour_id = $1
+          AND $2 BETWEEN start_date AND end_date
+      `;
+       const discountResult = await pool.query(discountQuery, [
+         tourId,
+         currentDateTime,
+       ]);
+       if (discountResult.rows.length > 0) {
+         const discount_percentage = discountResult.rows[0].discount_percentage;
+         total_price -= total_price * (discount_percentage / 100);
+       }
+
 
           let discounted_price = total_price;
           if (coupon_ids && coupon_ids.length > 0) {

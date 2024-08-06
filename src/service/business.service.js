@@ -300,15 +300,22 @@ function validateTour(data) {
   if (data.adult_price <= data.child_price || data.child_price <= data.infant_price) {
     errors.push("Giá cho người lớn phải lớn hơn giá cho trẻ em, và giá cho trẻ em phải lớn hơn giá cho trẻ sơ sinh.");
   }
-  // if (data.description && (data.description.length < 10 || !/^[\w\s.,!?-]+$/.test(data.description))) {
-  //   errors.push("Thông tin về lịch trình phải dài ít nhất 10 ký tự và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu câu cơ bản).");
-  // }
-  // || !/^[\w\sÀ-ỹà-ỹ-]+$/.test(data.name)
-  if (!data.name ) {
+  if (
+    !data.description ||
+    typeof data.description !== "string" ||
+    data.description.trim() === "" || (data.description.length < 50)
+  ) {
+    errors.push("Thông tin về lịch trình phải dài ít nhất 50 ký tự .");
+  }
+   if (/!@#$%^&*/.test(data.name)) {
+     errors.push("Tên tour không được chứa ký tự !@#$%^&*.");
+   }
+  if (!data.name || !/^[\w\sÀ-ỹà-ỹ-:]+$/.test(data.name)) {
     errors.push(
-      "Tên tour không được để trống, và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu gạch ngang)."
+      "Tên tour không được để trống, và chỉ chứa ký tự hợp lệ (chữ cái, số, dấu cách, dấu gạch ngang, dấu :)."
     );
   }
+ 
 
   return errors;
 }
@@ -347,22 +354,54 @@ app.post(
       if (!req.files || req.files.length < 4) {
         return res.status(400).json({ error: "Cần ít nhất 4 file ảnh." });
       }
+      const existingTour = await pool.query(
+        `SELECT * FROM tours WHERE tour_code = $1`,
+        [tour_code]
+      );
+
+      if (existingTour.rows.length > 0) {
+        const existingTourBusinessId = existingTour.rows[0].business_id;
+        const existingTourData = existingTour.rows[0];
+        if (existingTourBusinessId != business_id) {
+          return res
+            .status(400)
+            .json({ error: "Mã tour này đã có doanh nghiệp sử dụng." });
+        } 
+          if (existingTourData.name !== name) {
+            return res
+              .status(400)
+              .json({ error: `Tên tour không khớp với ${tour_code} đã tồn tại. Bạn có thể đổi mã tour khác!` });
+          }
+         
+      }
+      const duplicateTour = await pool.query(
+        `SELECT * FROM tours WHERE name = $1 AND start_date = $2 AND end_date = $3 AND business_id = $4`,
+        [name, start_date, end_date, business_id]
+      );
+
+      if (duplicateTour.rows.length > 0) {
+        return res
+          .status(400)
+          .json({ error: "Đã có Tour này trong khoảng thời gian đã chọn." });
+      }
+
+
       const images = req.files;
       const resizedImages = [];
 
       for (let i = 0; i < images.length; i++) {
         let compressedImageBuffer;
-        let quality = 80; 
+        let quality = 80;
         let width = 800;
 
         do {
           compressedImageBuffer = await sharp(images[i].buffer)
-            .resize({ width }) 
+            .resize({ width })
             .jpeg({ quality })
             .toBuffer();
 
           if (compressedImageBuffer.length <= 100 * 1024) {
-            break; 
+            break;
           }
 
           if (quality > 10) {
@@ -370,7 +409,7 @@ app.post(
           } else if (width > 200) {
             width -= 100;
           } else {
-            break; 
+            break;
           }
         } while (compressedImageBuffer.length > 100 * 1024);
 
@@ -382,8 +421,8 @@ app.post(
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Active', $9, $10, $11, $12, $13, $14)
             RETURNING tour_id`,
         [
-          name,
-          description,
+          name.trim(),
+          description.trim(),
           adult_price,
           child_price,
           infant_price,
@@ -395,7 +434,7 @@ app.post(
           tourcategory_id,
           business_id,
           currentDateTime,
-          tour_code,
+          tour_code.trim(),
         ]
       );
 
@@ -520,12 +559,13 @@ app.get("/list-tours/:business_id/:status?", async (req, res) => {
 //-----------------------------------------------
 
 app.put(
-  "/update-tour/:tour_id",
+  "/update-tour/:tour_id/:business_id",
   authenticateToken,
   upload.array("images"),
   async (req, res) => {
     try {
       const tour_id = req.params.tour_id;
+         const business_id = req.params.business_id;
       const {
         name,
         description,
@@ -560,6 +600,26 @@ app.put(
         return res.status(400).json({ errors });
       }
 
+      const existTour = await pool.query(
+        `SELECT * FROM tours WHERE tour_code = $1`,
+        [tour_code]
+      );
+
+      if (existTour.rows.length > 0) {
+        const existingTourBusinessId = existTour.rows[0].business_id;
+        const existingTourData = existTour.rows[0];
+        if (existingTourBusinessId != business_id) {
+          return res
+            .status(400)
+            .json({ error: "Mã tour này đã có doanh nghiệp sử dụng." });
+        }
+        if (existingTourData.name !== name) {
+          return res.status(400).json({
+            error: `Tên tour không khớp với ${tour_code} đã tồn tại.`,
+          });
+        }
+      }
+
       await pool.query(
         `UPDATE tours
         SET name = $1,
@@ -578,8 +638,8 @@ app.put(
             tour_code = $13
         WHERE tour_id = $14`,
         [
-          name,
-          description,
+          name.trim(),
+          description.trim(),
           adult_price,
           child_price,
           infant_price,
@@ -590,7 +650,7 @@ app.put(
           hotel,
           tourcategory_id,
           currentDateTime,
-          tour_code,
+          tour_code.trim(),
           tour_id,
         ]
       );
@@ -621,12 +681,12 @@ app.put(
         for (let i = 0; i < images.length; i++) {
           let compressedImageBuffer;
           let quality = 80;
-          let width = 800; 
+          let width = 800;
 
           do {
             compressedImageBuffer = await sharp(images[i].buffer)
-              .resize({ width }) 
-              .jpeg({ quality }) 
+              .resize({ width })
+              .jpeg({ quality })
               .toBuffer();
 
             if (compressedImageBuffer.length <= 100 * 1024) {
@@ -1391,9 +1451,14 @@ app.get("/list-passengers-tour/:tourId", authenticateToken, async (req, res) => 
         .status(404)
         .json({ message: "Không tìm thấy hành khách cho tour này." });
     }
-    const tour_name = passengersResult.rows[0].tour_name
+     const passengersWithIndex = passengersResult.rows.map(
+       (passenger, index) => ({
+         ...passenger,
+         stt: index + 1,
+       })
+     );
 
-    res.status(200).json(passengersResult.rows );
+     res.status(200).json(passengersWithIndex);
   } catch (error) {
     console.error("Lỗi khi lấy danh sách hành khách:", error);
     res
