@@ -387,10 +387,10 @@ const currentDateTime = moment()
       return {
         ...row,
         image: row.image ? row.image.toString("base64") : null,
-        adult_price_discount: adult_price_discount,
-        child_price_discount: child_price_discount,
-        infant_price_discount: infant_price_discount,
-        discount_percentage: discount, 
+        adult_price_discount: parseInt(adult_price_discount.toFixed(0)),
+        child_price_discount: parseInt(child_price_discount.toFixed(0)),
+        infant_price_discount: parseInt(infant_price_discount.toFixed(0)),
+        discount_percentage: discount,
       };
     });
 

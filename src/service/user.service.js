@@ -695,9 +695,9 @@ app.get("/get-tour/:tourId", async (req, res) => {
       const child_price_discount = tour.child_price * (1 - discount / 100);
       const infant_price_discount = tour.infant_price * (1 - discount / 100);
 
-      tour.adult_price_discount = adult_price_discount;
-      tour.child_price_discount = child_price_discount;
-      tour.infant_price_discount = infant_price_discount;
+      tour.adult_price_discount = parseInt(adult_price_discount.toFixed(0));
+      tour.child_price_discount = parseInt(child_price_discount.toFixed(0));
+      tour.infant_price_discount = parseInt(infant_price_discount.toFixed(0));
 
     res.status(200).json(tour);
   } catch (error) {
