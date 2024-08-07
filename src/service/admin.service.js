@@ -341,9 +341,9 @@ function validateNews({ title, content, newscategory_id }) {
    errors.push("Tiêu đề là bắt buộc và phải là một chuỗi không rỗng.");
  }
  
-  // else if ( title.length > 100) {
-  //   errors.push("Tiêu đề không được vượt quá 100 ký tự.");
-  // }
+  else if ( title.length < 20) {
+    errors.push("Tiêu đề không được nhỏ hơn 20 ký tự.");
+  }
   else if (/[^a-zA-Z0-9À-ỹà-ỹ\s\p{P}]/u.test(title)) {
     errors.push(
       "Tiêu đề chỉ được chứa chữ cái, số, khoảng trắng và ký tự đặc biệt hợp lệ."
@@ -355,11 +355,11 @@ function validateNews({ title, content, newscategory_id }) {
     typeof  content !== "string" ||
      content.trim() === ""
   ) {
-    errors.push("Nội dung không được để trống và phải là chuỗi văn bản.");
+    errors.push("Nội dung không được để trống.");
   }
-  // else if ( content.length > 2000) {
-  //   errors.push("Nội dung không được vượt quá 2000 ký tự.");
-  // }
+  else if ( content.length < 50) {
+    errors.push("Nội dung không được nhỏ hơn 50 ký tự.");
+  }
 
   
 

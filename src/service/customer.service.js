@@ -97,8 +97,8 @@ function validateRegister(data) {
     errors.push("Tên là bắt buộc.");
   } else if (typeof data.name !== "string" || data.name.trim() === "") {
     errors.push("Tên không hợp lệ.");
-  } else if (/[!@#$%^&*]/.test(data.name)) {
-    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  } else if (/[0-9!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa số và ký tự đặc biệt !.");
   }
 
   if (!data.birth_of_date) {
@@ -621,9 +621,21 @@ app.post(
           });
         }
         var passengersParse = passengers;
+        const validationResults = validatePassengers(
+          passengers,
+          adult_quantity,
+          child_quantity,
+          infant_quantity
+        );
+        if (validationResults.length > 0) {
+          return res.status(400).json({
+            errors: validationResults
+          });
+        }
       } else {
         passengers = passengersFromBody;
         var passengersParse = JSON.parse(passengers);
+       
       }
 
       let validShareToken = null;
@@ -745,6 +757,95 @@ app.post(
     }
   }
 );
+
+function validatePassenger(passenger) {
+  const errors = [];
+
+  if (!passenger.name || typeof passenger.name !== "string") {
+    errors.push({
+      message: "Tên hành khách không hợp lệ. Vui lòng kiểm tra lại danh sách!",
+    });
+  } else if (/[0-9!@#$%^&*]/.test(passenger.name)) {
+    errors.push({
+      message:
+        "Tên không được chứa số và ký tự đặc biệt !. Vui lòng kiểm tra lại danh sách!",
+    });
+  }
+
+  const validGenders = ["Nam", "Nữ"];
+  const gender = passenger.gender ? passenger.gender.trim() : "";
+  if (gender && !validGenders.includes(gender)) {
+    errors.push({
+      message: "Giới tính hành khách trong danh sách không hợp lệ. Vui lòng nhập đúng ( Nam hoặc Nữ ).",
+    });
+  }
+
+  if (!/^[\d]+$/.test(passenger.passport_number)) {
+    errors.push({
+      message:
+        "Số CCCD/Passport phải là số !. Vui lòng kiểm tra lại danh sách!",
+    });
+  }
+
+  const validTypes = ["Người lớn", "Trẻ em", "Trẻ nhỏ"];
+  if (passenger.type && !validTypes.includes(passenger.type)) {
+    errors.push({
+      message: "Loại hành khách trong danh sách không hợp lệ. Vui lòng nhập đúng (Người lớn, Trẻ em, Trẻ nhỏ)",
+    });
+  }
+
+  return errors;
+}
+
+function validatePassengers(
+  passengers,
+  adult_quantity,
+  child_quantity,
+  infant_quantity
+) {
+  const allErrors = [];
+
+  const countByType = {
+    "Người lớn": 0,
+    "Trẻ em": 0,
+    "Trẻ nhỏ": 0,
+  };
+
+  passengers.forEach((passenger) => {
+    const errors = validatePassenger(passenger);
+    if (errors.length > 0) {
+       allErrors.push(...errors);
+    } else {
+      if (passenger.type in countByType) {
+        countByType[passenger.type]++;
+      } else {
+        allErrors.push({ message: "Loại hành khách không hợp lệ." });
+      }
+    }
+  });
+
+  if (countByType["Người lớn"] != parseInt(adult_quantity)) {
+    allErrors.push({
+      message: `Số lượng 'Người lớn' trong danh sách không khớp với số lượng đặt (${adult_quantity}). Vui lòng nhập đúng chữ (Người lớn)`,
+    });
+  }
+  if (countByType["Trẻ em"] != parseInt(child_quantity)) {
+    allErrors.push({
+      message: `Số lượng 'Trẻ em' trong danh sách không khớp với số lượng đặt (${child_quantity}).`,
+    });
+  }
+  if (countByType["Trẻ nhỏ"] != parseInt(infant_quantity)) {
+    allErrors.push({
+      message: `Số lượng 'Trẻ nhỏ' trong danh sách không khớp với số lượng đặt (${infant_quantity}).`,
+    });
+  }
+
+  const uniqueErrors = Array.from(
+    new Set(allErrors.map((error) => error.message))
+  );
+
+  return uniqueErrors;
+}
 
 async function getOrderDetails(orderId) {
   const orderDetailQuery = `
@@ -1020,17 +1121,24 @@ app.post(
           }
         });
         if (passengers.length !== total_quantity) {
-          console.error(
-            "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour:",
-            passengers.length,
-            total_quantity
-          );
+          
           return res.status(400).json({
             message:
               "Số lượng khách hàng từ file Excel không trùng khớp với số lượng đặt tour",
           });
         }
         var passengersParse = passengers;
+        const validationResults = validatePassengers(
+          passengers,
+          adult_quantity,
+          child_quantity,
+          infant_quantity
+        );
+        if (validationResults.length > 0) {
+          return res.status(400).json({
+            errors: validationResults,
+          });
+        }
       } else {
         passengers = passengersFromBody;
         var passengersParse = JSON.parse(passengers);
@@ -1208,7 +1316,7 @@ app.post(
 
       const requestType = paymentMethod;
 
-      const returnUrl = `http://localhost:3000/checkout`;
+      const returnUrl = process.env.RETURN_URL;
 
       const rawSignature = `accessKey=${momoConfig.accessKey}&amount=${amount}&extraData=${extraData}&ipnUrl=${momoConfig.ipnUrl}&orderId=${orderId}&orderInfo=${orderInfo}&partnerCode=${momoConfig.partnerCode}&redirectUrl=${returnUrl}&requestId=${requestId}&requestType=${requestType}`;
       const signature = crypto

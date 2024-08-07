@@ -306,8 +306,8 @@ function validateUpdateAccount(data) {
 
   if (data.name && (typeof data.name !== "string" || data.name.trim() === "")) {
     errors.push("Tên không hợp lệ.");
-  } else if (/[!@#$%^&*]/.test(data.name)) {
-    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  } else if (/[0-9!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa số và ký tự đặc biệt !.");
   }
 
   if (data.birth_of_date && isNaN(Date.parse(data.birth_of_date))) {
@@ -333,8 +333,10 @@ function validateUpdateAccount(data) {
       data.bank_account_name.trim() === "")
   ) {
     errors.push("Tên tài khoản ngân hàng không hợp lệ.");
-  } else if (/[!@#$%^&*]/.test(data.bank_account_name)) {
-    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  } else if (/[0-9!@#$%^&*]/.test(data.bank_account_name)) {
+    errors.push(
+      "Tên  tài khoản ngân hàng không được chứa số và ký tự đặc biệt !."
+    );
   }
 
   if (data.bank_account_number && !/^\d+$/.test(data.bank_account_number)) {

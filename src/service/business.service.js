@@ -70,8 +70,8 @@ function validateRegister(data) {
     errors.push("Tên là bắt buộc.");
   } else if (typeof data.name !== "string" || data.name.trim() === "") {
     errors.push("Tên không hợp lệ.");
-  } else if (/[!@#$%^&*]/.test(data.name)) {
-    errors.push("Tên không được chứa ký tự đặc biệt !.");
+  } else if (/[0-9!@#$%^&*]/.test(data.name)) {
+    errors.push("Tên không được chứa số và ký tự đặc biệt !.");
   }
 
   if (!data.birth_of_date) {
@@ -765,12 +765,40 @@ app.put(
 );
 
 //-----------------------------------------------
+function validatePolicies(data) {
+  const errors = [];
+ if (
+   !data.description ||
+   typeof data.description !== "string" ||
+   data.description.trim() === "" ||
+   data.description.length < 20
+ ) {
+   errors.push("Thông tin về chính sách phải dài ít nhất 20 ký tự .");
+ }
+  return errors;
+}
 
 app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
   const businessId = req.params.business_id;
   const { policytype, description } = req.body;
 
   try {
+     const errors = validatePolicies(req.body);
+     if (errors.length > 0) {
+       return res.status(400).json({ errors });
+     }
+
+      const checkExistingQuery =
+        "SELECT * FROM policies WHERE policytype = $1 AND business_id = $2 ";
+      const existingResult = await pool.query(checkExistingQuery, [
+        policytype,
+        businessId,
+      ]);
+      if (existingResult.rows.length > 0) {
+        return res
+          .status(400)
+          .json({ error: "Loại chính sách này đã tồn tại!." });
+      }
 
     const insertQuery = `
       INSERT INTO policies (business_id, policytype, description)
@@ -779,8 +807,8 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
     `;
     const newPolicy = await pool.query(insertQuery, [
       businessId,
-      policytype,
-      description,
+      policytype.trim(),
+      description.trim(),
     ]);
 
     res.status(201).json(newPolicy.rows[0]);
@@ -791,6 +819,31 @@ app.post("/add-policies/:business_id", authenticateToken, async (req, res) => {
 });
 
 //-----------------------------------------------
+function validatePolicyCancellation(data) {
+  const errors = [];
+
+ 
+
+  if (
+    !data.days_before_departure ||
+    typeof data.days_before_departure !== "number" ||
+    data.days_before_departure < 0
+  ) {
+    errors.push("Số ngày trước ngày khởi hành phải là số nguyên không âm.");
+  }
+
+  if (
+    data.refund_percentage === undefined ||
+    typeof data.refund_percentage !== "number" ||
+    data.refund_percentage < 0 ||
+    data.refund_percentage > 100
+  ) {
+    errors.push("Tỷ lệ hoàn tiền phải là số trong khoảng từ 0 đến 100.");
+  }
+
+
+  return errors;
+}
 
 app.post("/add-policy-cancellation/:businessId", async (req, res) => {
   const { days_before_departure, refund_percentage, type } = req.body;
@@ -803,6 +856,11 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
   }
 
   try {
+     const errors = validatePolicyCancellation(req.body);
+     if (errors.length > 0) {
+       return res.status(400).json({ errors });
+     }
+     
      const checkExistingQuery =
        "SELECT * FROM policy_cancellation WHERE days_before_departure = $1 AND refund_percentage = $2 AND type = $3  AND business_id = $4 ";
      const existingResult = await pool.query(checkExistingQuery, [
@@ -814,6 +872,20 @@ app.post("/add-policy-cancellation/:businessId", async (req, res) => {
      if (existingResult.rows.length > 0) {
        return res.status(400).json({ message: "Chính sách này đã tồn tại !." });
      }
+      const checkLogic =
+        "SELECT * FROM policy_cancellation WHERE days_before_departure < $1 AND refund_percentage > $2 AND type = $3 AND business_id = $4";
+      const LogicResult = await pool.query(checkLogic, [
+        days_before_departure,
+        refund_percentage,
+        type,
+        businessId,
+      ]);
+
+      if (LogicResult.rows.length > 0) {
+        return res.status(400).json({
+          message: `Ngày trước khởi hành và phần trăm hoàn tiền không hợp lý với các chính sách trước đó. Vui lòng kiểm tra lại!`,
+        });
+      }
      
     const result = await pool.query(
       "INSERT INTO policy_cancellation (days_before_departure, refund_percentage, business_id, type) VALUES ($1, $2, $3, $4) RETURNING *",
@@ -920,6 +992,10 @@ app.put("/policies/:policy_id", async (req, res) => {
     req.body;
 
   try {
+      const errors = validatePolicies(req.body);
+      if (errors.length > 0) {
+        return res.status(400).json({ errors });
+      }
     let query = "";
     if (role === "3") {
       query = `UPDATE policies SET policytype = $1, description = $2 WHERE policy_id = $3 RETURNING *`;
